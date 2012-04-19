@@ -28,6 +28,8 @@ import play.core.server.netty._
 
 import scala.collection.JavaConverters._
 
+import se.cgbystrom.netty.FlashPolicyHandler
+
 /**
  * provides a stopable Server
  */
@@ -50,7 +52,7 @@ class NettyServer(appProvider: ApplicationProvider, port: Int, sslPort: Option[I
   class PlayPipelineFactory(secure: Boolean = false) extends ChannelPipelineFactory {
     def getPipeline = {
       val newPipeline = pipeline()
-      
+      newPipeline.addLast("flashPolicy", new FlashPolicyHandler());
       if(secure) {
         val keyStore = KeyStore.getInstance("JKS")
         keyStore.load(FakeKeyStore.asInputStream, FakeKeyStore.getKeyStorePassword)
