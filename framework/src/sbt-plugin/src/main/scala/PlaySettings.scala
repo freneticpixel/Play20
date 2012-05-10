@@ -95,9 +95,9 @@ trait PlaySettings {
       loader.loadClass("play.api.Logger").getMethod("shutdown").invoke(null)
     },
 
-    testOptions in Test += Tests.Argument("sequential", "true"),
+    testOptions in Test += Tests.Argument(TestFrameworks.Specs2, "sequential", "true"),
 
-    testOptions in Test += Tests.Argument("junitxml", "console"),
+    testOptions in Test += Tests.Argument(TestFrameworks.JUnit,"junitxml", "console"),
 
     testListeners <<= (target, streams).map((t, s) => Seq(new eu.henkelmann.sbt.JUnitXmlTestsListener(t.getAbsolutePath, s.log))),
 

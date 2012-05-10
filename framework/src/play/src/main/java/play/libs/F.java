@@ -66,7 +66,7 @@ public class F {
     public static interface Function3<A,B,C,R> {
         public R apply(A a, B b, C c) throws Throwable;
     }
-
+    
     /**
      * A promise to produce a result of type <code>A</code>.
      */
@@ -79,8 +79,28 @@ public class F {
          * @return A single promise whose methods act on the list of redeemed promises
          */
         public static <A> Promise<List<A>> waitAll(Promise<A>... promises){
-
             return new Promise<List<A>>(play.core.j.JavaPromise.<A>sequence(java.util.Arrays.asList(promises)));
+        }
+        
+        /**
+         * Create a Promise that is redeemed after a timeout.
+         *
+         * @param message The message to use to redeem the Promise.
+         * @param delay The delay (expressed with the corresponding unit).
+         * @param unit The Unit.
+         */
+        public static <A> Promise<A> timeout(A message, Long delay, java.util.concurrent.TimeUnit unit) {
+            return new Promise(play.core.j.JavaPromise.timeout(message, delay, unit));
+        }
+        
+        /**
+         * Create a Promise that is redeemed after a timeout.
+         *
+         * @param message The message to use to redeem the Promise.
+         * @param delay The delay expressed in Milliseconds.
+         */
+        public static <A> Promise<A> timeout(A message, Long delay) {
+            return timeout(message, delay, java.util.concurrent.TimeUnit.MILLISECONDS);
         }
 
         /**
@@ -90,14 +110,28 @@ public class F {
          * @return A single promise whose methods act on the list of redeemed promises
          */
         public static <A> Promise<List<A>> waitAll(Iterable<Promise<A>> promises){
-
             ArrayList<Promise<A>> ps = new ArrayList<Promise<A>>();
-
             for(Promise<A> p : promises){
                 ps.add(p);
             }
-
             return new Promise<List<A>>(play.core.j.JavaPromise.<A>sequence(ps));
+        }
+
+        /**
+         * Create a new pure promise, that is, a promise with a constant value from the start.
+         *
+         * @param a the value for the promise
+         */
+        public static <A> Promise<A> pure(final A a) {
+            return new Promise<A>(play.core.j.JavaPromise.<A>pure(a));
+        }
+
+        /**
+         * Create a new promise throwing an exception.
+         * @param a Value to throw
+         */
+        public static <A> Promise<A> throwing(Throwable throwable) {
+            return new Promise<A>(play.core.j.JavaPromise.<A>throwing(throwable));
         }
 
         private final play.api.libs.concurrent.Promise<A> promise;
@@ -109,20 +143,6 @@ public class F {
          */
         public Promise(play.api.libs.concurrent.Promise<A> promise) {
             this.promise = promise;
-        }
-
-        /**
-         * Create a new pure promise, that is, a promise with a constant value from the start.
-         *
-         * @param a the value for the promise
-         */
-        public Promise(final A a) {
-            this(play.api.libs.concurrent.Promise$.MODULE$.pure(new scala.runtime.AbstractFunction0<A>() {
-                @Override
-                public A apply() {
-                    return a;
-                }
-            }));
         }
 
         /**
@@ -164,7 +184,7 @@ public class F {
          * @param action The action to perform.
          */
         public void onRedeem(final Callback<A> action) {
-            promise.onRedeem(new scala.runtime.AbstractFunction1<A,scala.runtime.BoxedUnit>() {
+            promise.onRedeem(withContext(new scala.runtime.AbstractFunction1<A,scala.runtime.BoxedUnit>() {
                 public scala.runtime.BoxedUnit apply(A a) {
                     try {
                         action.invoke(a);
@@ -175,7 +195,7 @@ public class F {
                     }
                     return null;
                 }
-            });
+            }));
         }
 
         /**
@@ -190,7 +210,7 @@ public class F {
          */
         public <B> Promise<B> map(final Function<A, B> function) {
             return new Promise<B>(
-                promise.map(new scala.runtime.AbstractFunction1<A,B>() {
+                promise.map(withContext(new scala.runtime.AbstractFunction1<A,B>() {
                     public B apply(A a) {
                         try {
                             return function.apply(a);
@@ -200,7 +220,7 @@ public class F {
                             throw new RuntimeException(t);
                         }
                     }
-                })
+                }))
             );
         }
 
@@ -217,17 +237,17 @@ public class F {
          */
         public Promise<A> recover(final Function<Throwable,A> function) {
             return new Promise<A>(
-              promise.recover(new play.api.libs.concurrent.Recover<A>(){
-                  public A recover(Throwable t){
-                      try {
-                          return function.apply(t);
-                      } catch (RuntimeException e) {
-                          throw e;
-                      } catch (Throwable tt) {
-                          throw new RuntimeException(tt);
-                      }
-                  }
-              })
+                play.core.j.JavaPromise.recover(promise, withContext(new scala.runtime.AbstractFunction1<Throwable, A>() {
+                    public A apply(Throwable t) {
+                        try {
+                            return function.apply(t);
+                        } catch (RuntimeException e) {
+                            throw e;
+                        } catch(Throwable e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                }))
             );
         }
 
@@ -243,7 +263,7 @@ public class F {
          */
         public <B> Promise<B> flatMap(final Function<A,Promise<B>> function) {
             return new Promise<B>(
-                promise.flatMap(new scala.runtime.AbstractFunction1<A,play.api.libs.concurrent.Promise<B>>() {
+                promise.flatMap(withContext(new scala.runtime.AbstractFunction1<A,play.api.libs.concurrent.Promise<B>>() {
                     public play.api.libs.concurrent.Promise<B> apply(A a) {
                         try {
                             return function.apply(a).promise;
@@ -253,7 +273,7 @@ public class F {
                             throw new RuntimeException(t);
                         }
                     }
-                })
+                }))
             );
         }
 
@@ -264,6 +284,23 @@ public class F {
          */
         public play.api.libs.concurrent.Promise<A> getWrappedPromise() {
             return promise;
+        }
+        
+        // -- Utils
+        
+        private <A,B> scala.Function1<A,B> withContext(final scala.Function1<A,B> f) {
+            final play.mvc.Http.Context context = play.mvc.Http.Context.current.get();
+            return new scala.runtime.AbstractFunction1<A,B>() {
+                public B apply(A a) {
+                    final play.mvc.Http.Context previousContext = play.mvc.Http.Context.current.get();
+                    try {
+                        play.mvc.Http.Context.current.set(context);
+                        return f.apply(a);
+                    } finally {
+                        play.mvc.Http.Context.current.set(previousContext);
+                    }
+                }
+            };
         }
 
     }
