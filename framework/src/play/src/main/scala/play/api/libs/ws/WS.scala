@@ -41,6 +41,7 @@ object WS {
     import play.api.Play.current
     val config = new AsyncHttpClientConfig.Builder()
       .setConnectionTimeoutInMs(current.configuration.getMilliseconds("ws.timeout").getOrElse(120000L).toInt)
+      .setRequestTimeoutInMs(current.configuration.getMilliseconds("ws.timeout").getOrElse(120000L).toInt)
       .setFollowRedirects(current.configuration.getBoolean("ws.followRedirects").getOrElse(true))
       .setUseProxyProperties(current.configuration.getBoolean("ws.useProxyProperties").getOrElse(true))
     current.configuration.getString("ws.useragent").map { useragent =>
@@ -214,27 +215,25 @@ object WS {
 
         override def onBodyPartReceived(bodyPart: HttpResponseBodyPart) = {
           if (!doneOrError) {
-            iteratee = iteratee.pureFlatFold(
-              // DONE
-              (a, e) => {
+            iteratee = iteratee.pureFlatFold {
+              case Step.Done(a, e) => {
                 doneOrError = true
                 val it = Done(a, e)
                 iterateeP.redeem(it)
                 it
-              },
+              }
 
-              // CONTINUE
-              k => {
+              case Step.Cont(k) => {
                 k(El(bodyPart.getBodyPartBytes()))
-              },
+              }
 
-              // ERROR
-              (e, input) => {
+              case Step.Error(e, input) => {
                 doneOrError = true
                 val it = Error(e, input)
                 iterateeP.redeem(it)
                 it
-              })
+              }
+            }
             STATE.CONTINUE
           } else {
             iteratee = null

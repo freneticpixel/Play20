@@ -2,6 +2,7 @@ package play.core
 
 import play.api.mvc._
 import play.api.mvc.Results._
+import org.apache.commons.lang3.reflect.MethodUtils
 
 /**
  * provides Play's router implementation
@@ -445,7 +446,7 @@ object Router {
                                     queryParams.map { p =>
                                       ("(\"\"\" + implicitly[QueryStringBindable[" + p.typeName + "]].javascriptUnbind + \"\"\")" + """("""" + p.name + """", """ + localNames.get(p.name).getOrElse(p.name) + """)""") -> p
                                     }.map {
-                                      case (u, Parameter(name, typeName, None, Some(default))) => """(""" + localNames.get(name).getOrElse(name) + " == \"\"\" +  implicitly[JavascriptLitteral[" + typeName.replace(".", "_") + "]].to(" + default + ") + \"\"\" ? null : " + u + ")"
+                                      case (u, Parameter(name, typeName, None, Some(default))) => """(""" + localNames.get(name).getOrElse(name) + " == \"\"\" +  implicitly[JavascriptLitteral[" + typeName + "]].to(" + default + ") + \"\"\" ? null : " + u + ")"
                                       case (u, Parameter(name, typeName, None, None)) => u
                                     }.mkString(", "))
 
@@ -1169,10 +1170,7 @@ object Router {
         new play.core.j.JavaAction {
           def invocation = call
           def controller = handler.getControllerClass
-          def method = controller.getMethod(handler.method, handler.parameterTypes.map {
-            case c if c == classOf[Long] => classOf[java.lang.Long]
-            case c => c
-          }: _*)
+          def method = MethodUtils.getMatchingAccessibleMethod(controller, handler.method, handler.parameterTypes: _*)
         }
       }
     }
