@@ -7,11 +7,15 @@ import org.specs2.mutable._
 import models._
 import models.Protocol._
 import org.openqa.selenium.htmlunit.HtmlUnitDriver
-
+import java.util.Calendar
 
 class FunctionalSpec extends Specification {
   "an Application" should {
     
+    def cal = Calendar.getInstance()
+
+    val startDate = cal.getTime()
+
     "call onClose for Ok.sendFile responses" in {
       import java.io.File
       running(TestServer(9003), HTMLUNIT) { browser =>
@@ -33,6 +37,27 @@ class FunctionalSpec extends Specification {
     } 
     "pass functional test" in {
       running(TestServer(9001), HTMLUNIT) { browser =>
+        // -- Etags
+
+        val format = new java.text.SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz")
+        val h = await(WS.url("http://localhost:9001/public/stylesheets/main.css").get)
+        h.header("Last-Modified").isDefined must equalTo(true)
+        h.header("Etag").get.startsWith("\"") must equalTo(true)
+        h.header("Etag").get.endsWith("\"") must equalTo(true)
+        
+        val secondRequest = await(WS.url("http://localhost:9001/public/stylesheets/main.css").withHeaders("If-Modified-Since"-> format.format(startDate)).get)
+        secondRequest.status must equalTo(304)
+       
+        val localCal = cal
+        val f = new java.io.File("public/stylesheets/main.css")
+        localCal.setTime(new java.util.Date(f.lastModified))
+        localCal.add(Calendar.HOUR, -1)
+        val earlierDate =  localCal.getTime
+
+        val third = await(WS.url("http://localhost:9001/public/stylesheets/main.css").withHeaders("If-Modified-Since"-> format.format(earlierDate)).get)
+        third.header("Last-Modified").isDefined must equalTo(true)
+        third.status must equalTo(200)
+
         val content: String = await(WS.url("http://localhost:9001/post").post("param1=foo")).body
         content must contain ("param1")
         content must contain("AnyContentAsText")
@@ -120,6 +145,21 @@ class FunctionalSpec extends Specification {
 
         browser.$("#route-ws-secure-url2").click()
         browser.$("#result").getTexts().get(0) must equalTo ("wss://localhost:9001/javascript-test?name=world")
+      }
+    }
+
+    "Provide a hook to handle errors" in {
+      "Synchronous results" in {
+        running(TestServer(9000), HTMLUNIT) { browser =>
+          browser.goTo("http://localhost:9000/sync-error")
+          browser.pageSource must equalTo ("Something went wrong.")
+        }
+      }
+      "Asynchronous results" in {
+        running(TestServer(9000), HTMLUNIT) { browser =>
+          browser.goTo("http://localhost:9000/async-error")
+          browser.pageSource must equalTo ("Something went wrong.")
+        }
       }
     }
 

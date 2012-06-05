@@ -193,7 +193,7 @@ object PlayBuild extends Build {
             
             "com.google.code.findbugs"          %    "jsr305"                   %   "2.0.0",
             
-            ("org.avaje"                        %    "ebean"                    %   "2.7.3" notTransitive())
+            ("org.avaje"                        %    "ebean"                    %   "2.7.5" notTransitive())
               .exclude("javax.persistence", "persistence-api")
             ,
             
@@ -238,7 +238,7 @@ object PlayBuild extends Build {
             "oauth.signpost"                    %    "signpost-core"            %   "1.2.1.1",
             "com.codahale"                      %   "jerkson_2.9.1"                  %   "0.5.0",
             
-            ("org.reflections"                  %    "reflections"              %   "0.9.6" notTransitive())
+            ("org.reflections"                  %    "reflections"              %   "0.9.7" notTransitive())
               .exclude("com.google.guava", "guava")
               .exclude("javassist", "javassist")
             ,
@@ -262,7 +262,7 @@ object PlayBuild extends Build {
             "org.specs2"                        %%   "specs2"                   %   "1.9"      %  "test",
             "com.novocode"                      %    "junit-interface"          %   "0.8"        %  "test",
             
-            "org.fluentlenium"     %    "fluentlenium-festassert"             %   "0.5.6"      %  "test"
+            "org.fluentlenium"     %    "fluentlenium-festassert"             %   "0.6.0"      %  "test"
         )
 
         val sbtDependencies = Seq(
@@ -292,7 +292,8 @@ object PlayBuild extends Build {
         )
 
         val consoleDependencies = Seq(
-            "com.github.scala-incubator.io"     %%   "scala-io-file"            %   "0.4.0"
+            "com.github.scala-incubator.io"     %%   "scala-io-file"            %   "0.4.0",
+            "net.databinder.giter8" % "giter8_2.9.1" % "0.4.5"
         )
 
         val templatesDependencies = Seq(
@@ -307,7 +308,7 @@ object PlayBuild extends Build {
             "org.specs2"                        %%   "specs2"                   %   "1.9",
             "com.novocode"                      %    "junit-interface"          %   "0.8",
             
-            "org.fluentlenium"     %    "fluentlenium-festassert"             %   "0.5.6"
+            "org.fluentlenium"     %    "fluentlenium-festassert"             %   "0.6.0"
         )
 
     }

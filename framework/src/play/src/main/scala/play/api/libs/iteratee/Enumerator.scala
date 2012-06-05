@@ -22,6 +22,8 @@ trait Enumerator[E] {
 
   def |>>>[A](i: Iteratee[E, A]): Promise[A] = apply(i).flatMap(_.run)
 
+  def run[A](i: Iteratee[E, A]): Promise[A] = |>>>(i)
+
   def |>>|[A](i: Iteratee[E, A]): Promise[Step[E,A]] = apply(i).flatMap(_.unflatten)
 
   /**
@@ -235,13 +237,14 @@ object Enumerator {
 
   }
 
+  @scala.deprecated("use Concurrent.broadcast instead", "2.1.0")
   def imperative[E](
     onStart: () => Unit = () => (),
     onComplete: () => Unit = () => (),
     onError: (String, Input[E]) => Unit = (_: String, _: Input[E]) => ()): PushEnumerator[E] = new PushEnumerator[E](onStart, onComplete, onError)
 
 
-
+  @scala.deprecated("use Concurrent.unicast instead", "2.1.0")
   def pushee[E](
     onStart: Pushee[E] => Unit,
     onComplete: () => Unit = () => (),
@@ -484,11 +487,13 @@ object Enumerator {
    */
   def apply[E](in: E*): Enumerator[E] = new Enumerator[E] {
 
-    def apply[A](i: Iteratee[E, A]): Promise[Iteratee[E, A]] = enumerate(in, i)
+    def apply[A](i: Iteratee[E, A]): Promise[Iteratee[E, A]] = enumerateSeq(in, i)
 
   }
 
-  private def enumerate[E, A]: (Seq[E], Iteratee[E, A]) => Promise[Iteratee[E, A]] = { (l, i) =>
+  def enumerate[E](s:Seq[E]): Enumerator[E] = apply(s:_*)
+
+  private def enumerateSeq[E, A]: (Seq[E], Iteratee[E, A]) => Promise[Iteratee[E, A]] = { (l, i) =>
     l.foldLeft(Promise.pure(i))((i, e) =>
       i.flatMap(it => it.pureFold{ 
         case Step.Cont(k) => k(Input.El(e))
@@ -497,6 +502,7 @@ object Enumerator {
   }
 }
 
+@scala.deprecated("use Concurrent.broadcast instead", "2.1.0")
 class PushEnumerator[E] private[iteratee] (
     onStart: () => Unit = () => (),
     onComplete: () => Unit = () => (),

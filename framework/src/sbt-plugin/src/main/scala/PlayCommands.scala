@@ -163,9 +163,14 @@ trait PlayCommands extends PlayAssetsCompiler with PlayEclipse {
 
     val libs = {
       dependencies.filter(_.data.ext == "jar").map { dependency =>
-        dependency.data -> (packageName + "/lib/" + (dependency.metadata.get(AttributeKey[ModuleID]("module-id")).map { module =>
-          module.organization + "." + module.name + "-" + module.revision + ".jar"
-        }.getOrElse(dependency.data.getName)))
+        val filename = for {
+          module <- dependency.metadata.get(AttributeKey[ModuleID]("module-id"))
+          artifact <- dependency.metadata.get(AttributeKey[Artifact]("artifact"))
+        } yield {
+          module.organization + "." + module.name + "-" + artifact.name + "-" + module.revision + ".jar"
+        }
+        val path = (packageName + "/lib/" + filename.getOrElse(dependency.data.getName))
+        dependency.data -> path
       } ++ packaged.map(jar => jar -> (packageName + "/lib/" + jar.getName))
     }
 
@@ -247,28 +252,36 @@ exec java $* -cp "`dirname $0`/lib/*" """ + customFileName.map(fn => "-Dconfig.f
   }
 
   val playHash = TaskKey[String]("play-hash")
-  val playHashTask = (state, thisProjectRef, playExternalAssets) map { (s,r, externalAssets) =>
+  val playHashTask = (state, thisProjectRef, playExternalAssets, watchTransitiveSources) map { (s,r, externalAssets, transitiveSources) =>
     val filesToHash = inAllDependencies(r, baseDirectory, Project structure s).map {base =>
-      (base / "src" / "main" ** "*") +++ (base / "app" ** "*") +++ (base / "conf" ** "*") +++ (base / "public" ** "*")
+       (base / "public" ** "*")
     }.foldLeft(PathFinder.empty)(_ +++ _)
-    ( filesToHash +++ externalAssets.map {
+    ((filesToHash +++ externalAssets.map {
       case (root, paths, _) => paths(root)
-    }.foldLeft(PathFinder.empty)(_ +++ _)).get.map(_.lastModified).mkString(",").hashCode.toString
+    }.foldLeft(PathFinder.empty)(_ +++ _)).get ++ transitiveSources).map(_.lastModified).mkString(",").hashCode.toString
   }
 
 
   // ----- Post compile (need to be refactored and fully configurable)
 
-  def PostCompile(scope: Configuration) = (sourceDirectory in scope, dependencyClasspath in scope, compile in scope, javaSource in scope, sourceManaged in scope, classDirectory in scope, ebeanEnabled) map { (src, deps, analysis, javaSrc, srcManaged, classes, ebean) =>
+  def PostCompile(scope: Configuration) = (sourceDirectory in scope, dependencyClasspath in scope, compile in scope, javaSource in scope, sourceManaged in scope, classDirectory in scope, cacheDirectory in scope, ebeanEnabled) map { (src, deps, analysis, javaSrc, srcManaged, classes, cacheDir, ebean) =>
 
     val classpath = (deps.map(_.data.getAbsolutePath).toArray :+ classes.getAbsolutePath).mkString(java.io.File.pathSeparator)
 
-    val javaClasses = (javaSrc ** "*.java").get.map { sourceFile =>
-      analysis.relations.products(sourceFile)
-    }.flatten.distinct
+    val timestampFile = cacheDir / "play_instrumentation"
+    val lastEnhanced = if (timestampFile.exists) IO.read(timestampFile).toLong else Long.MinValue
+    val javaClasses = (javaSrc ** "*.java").get flatMap { sourceFile =>
+      // PropertiesEnhancer is class-local, so no need to check outside the class.
+      if (analysis.apis.internal(sourceFile).compilation.startTime > lastEnhanced)
+        analysis.relations.products(sourceFile)
+      else
+        Nil
+    }
 
     javaClasses.foreach(play.core.enhancers.PropertiesEnhancer.generateAccessors(classpath, _))
     javaClasses.foreach(play.core.enhancers.PropertiesEnhancer.rewriteAccess(classpath, _))
+
+    IO.write(timestampFile, System.currentTimeMillis.toString)
 
     // EBean
     if (ebean) {
