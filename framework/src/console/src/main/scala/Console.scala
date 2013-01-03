@@ -1,9 +1,11 @@
+
 package play.console
 
 import jline._
 import java.io._
 import scalax.file._
 import giter8.Giter8
+import scala.annotation.tailrec
 
 /**
  * provides the console infrastructure for all play apps
@@ -13,13 +15,13 @@ object Console {
   val consoleReader = new jline.ConsoleReader
 
   val logo = Colors.yellow(
-    """|       _            _ 
+    """|       _            _
            | _ __ | | __ _ _  _| |
            || '_ \| |/ _' | || |_|
            ||  __/|_|\____|\__ (_)
-           ||_|            |__/ 
-           |             
-           |""".stripMargin) + ("play! " + play.core.PlayVersion.current + ", http://www.playframework.org")
+           ||_|            |__/
+           |
+           |""".stripMargin) + ("play! " + play.core.PlayVersion.current + " (using Java " + System.getProperty("java.version") + " and Scala " + play.core.PlayVersion.scalaVersion + "), http://www.playframework.org")
 
   // -- Commands
 
@@ -31,9 +33,9 @@ object Console {
     }
   }
 
-  private def interact(params: Map[String, String]):Map[String, String] = {
-    params.map{e =>
-      consoleReader.printString(e._1+"["+e._2+"]:".stripMargin)
+  private def interact(params: Map[String, String]): Map[String, String] = {
+    params.map { e =>
+      consoleReader.printString(e._1 + "[" + e._2 + "]:".stripMargin)
       consoleReader.putString("")
       e._1 -> Option(consoleReader.readLine()).map(_.trim).filter(_.size > 0).getOrElse(e._2)
     }
@@ -65,13 +67,17 @@ object Console {
       "APPLICATION_SECRET" -> newSecret)
   }
 
-  private def haveFun(name: String) = 
+  private def haveFun(name: String) =
     """|OK, application %s is created.
                   |
                   |Have fun!
                   |""".stripMargin.format(name).trim
 
-  private def addG8(g8: String) =  if (g8.endsWith(".g8")) g8 else g8+".g8"
+  /**
+   * Could use the SBT ID parser, except that means going direct into SBT code, which is supposed to be separated
+   * and bridged by the xsbti API.  This is semantically equivalent.
+   */
+  private val IdParser = """(\p{L}[\p{L}\p{LD}_-]*)""".r
 
   /**
    * Creates a new play app skeleton either based on local templates on g8 templates fetched from github
@@ -91,74 +97,128 @@ object Console {
     if (path.exists) {
       (Colors.red("The directory already exists, cannot create a new application here."), -1)
     } else {
-      val template: (String, String) = if (args.length == 3 && args(1) =="--g8") (addG8(args.last),defaultName)
-        else {
-          consoleReader.printString("What is the application name? ")
-          consoleReader.printNewline
-          consoleReader.printString(Colors.cyan("> "))
-          consoleReader.putString(defaultName)
-          val name = Option(consoleReader.readLine()).map(_.trim).filter(_.size > 0).getOrElse(defaultName)
-          consoleReader.printNewline
+      val template: (String, String) = if (args.length == 3 && args(1) == "--g8") (args.last, defaultName)
+      else {
+        val name = readApplicationName(defaultName)
 
-          consoleReader.printString("Which template do you want to use for this new application? ")
-          consoleReader.printNewline
-          consoleReader.printString(
-            """|
+        consoleReader.printNewline()
+        consoleReader.printString("Which template do you want to use for this new application? ")
+        consoleReader.printNewline()
+        consoleReader.printString(
+          """|
                |  1             - Create a simple Scala application
                |  2             - Create a simple Java application
-               |  3             - Create an empty project
-               |  <g8 template> - Create an app based on the g8 template hosted on Github
                |""".stripMargin)
 
-          consoleReader.printNewline
-          consoleReader.printString(Colors.cyan("> "))
-          consoleReader.putString("")
+        consoleReader.printNewline()
+        consoleReader.putString("")
 
-          val templateNotFound = new RuntimeException("play.home system property is not set, so can not find template")
-          val fs = java.io.File.separator
-          val templateToUse = Option(consoleReader.readLine()).map(_.trim).getOrElse("") match {
-            case "1" => "scala-skel"
-            case "2" => "java-skel"
-            case "3" => "empty-skel"
-            case g8 @ _ => addG8(g8)
-          }
-          (templateToUse, name)
-     }
-     try {
-          //either generate templates based on local skeletons or use g8 templates
-          if (template._1.endsWith("-skel")) {
-              generateLocalTemplate(template._1, template._2, path)
-              (haveFun(template._2), 0)            
-          } else {
-            //this is necessary because g8 only provides an option to either pass params or use interactive session to populate fields
-            //but in our case we have the application_name (and path) already
-            val defaults: Map[String,String] = Giter8.fetchInfo(template._1, Some("master")).right.toOption.map{
-              case (defaults, templates) => defaults
-              case _ => Map[String,String]()
-            }.getOrElse(Map[String,String]())
-            consoleReader.printNewline
-            consoleReader.printString(defaults.get("description").getOrElse(template._1))
-            consoleReader.printNewline
-            consoleReader.printNewline
-            // populate defaults (application_name is coming from play so that's already populated)
-            val params: Array[String] = interact(defaults.filter(e => e._1 != "application_name" && e._1 != "description")).map(e=>"--"+e._1+"="+e._2).toArray
+        val templateToUse = Option(consoleReader.readLine(Colors.cyan("> "))).map(_.trim).getOrElse("") match {
+          case "1" => "scala-skel"
+          case "2" => "java-skel"
+          case g8 @ _ => g8
+        }
+        (templateToUse, name)
+      }
+      try {
+        //either generate templates based on local skeletons or use g8 templates
+        if (template._1.endsWith("-skel")) {
+          generateLocalTemplate(template._1, template._2, path)
+          (haveFun(template._2), 0)
+        } else {
 
-            val exitCode = Giter8.run(Array(template._1,"--application_name="+template._2) ++ params)
-            if (exitCode == 0) 
-              (haveFun(template._2), exitCode) 
-            else 
-              ("something went wrong while processing g8 template", exitCode)
+          import giter8._
+          import G8Helpers.Regs._
+
+          val repo = template._1
+          val appName = template._2
+
+          def usage = """
+                        |Usage: [TEMPLATE] [OPTION]...
+                        |Apply specified template.
+                        |
+                        |OPTIONS
+                        |    -b, --branch
+                        |        Resolves a template within a given branch
+                        |
+                        |
+                        |Apply template and interactively fulfill parameters.
+                        |    typesafehub/play-scala
+                        |
+                        |Or
+                        |    git://github.com/typesafehub/play-scala.g8.git
+                        |
+                        |Apply template from a remote branch
+                        |    typesafehub/play-scala -b some-branch
+                        |
+                        |Apply template from a local repo
+                        |    file://path/to/the/repo
+                        |
+                        |""".stripMargin
+
+          def toGitRepo(user: String, proj: String) =
+            "git://github.com/%s/%s.g8.git".format(user, proj)
+
+          val parsed = repo.split(" ").partition { s => Param.pattern.matcher(s).matches } match {
+            case (params, Array(Local(repo))) =>
+              Right(repo, None, params)
+            case (params, Array(Local(repo), Branch(_), branch)) =>
+              Right(repo, Some(branch), params)
+            case (params, Array(Repo(user, proj))) =>
+              Right(toGitRepo(user, proj), None, params)
+            case (params, Array(Repo(user, proj), Branch(_), branch)) =>
+              Right(toGitRepo(user, proj), Some(branch), params)
+            case (params, Array(Git(remote))) =>
+              Right(remote, None, params)
+            case (params, Array(Git(remote), Branch(_), branch)) =>
+              Right(remote, Some(branch), params)
+            case _ =>
+              Left(usage)
           }
-      } catch {case ex: Exception => 
-        ("Ooops - Something went wrong! Exception:"+ex.toString, -1)
+
+          val result = parsed.right.flatMap { case (repo, branch, _) =>
+            // this is necessary because g8 only provides an option to either
+            // pass params or use interactive session to populate fields
+            // but in our case we have the application_name (and path) already
+            Giter8.clone(repo, branch).right.map { f =>
+              val (parameters, templates, templatesRoot) = G8Helpers.fetchInfo(f.jfile, Some("src/main/g8"))
+              val ps = G8Helpers.interact(parameters - "application_name") + ("application_name" -> appName)
+              val base = new File(G8.normalize(appName))
+              G8Helpers.write(templatesRoot, templates, ps, base)
+            }
+          }
+
+          result.fold(
+            ex => ("something went wrong while processing g8 template: \n\t" + ex, -1),
+            _ => (haveFun(appName), 0)
+          )
+        }
+      } catch {
+        case ex: Exception =>
+          ("Ooops - Something went wrong! Exception:" + ex.toString, -1)
       }
     }
 
   }
 
+  @tailrec
+  def readApplicationName(defaultName: String): String = {
+    consoleReader.printString("What is the application name? [%s]".format(defaultName))
+    consoleReader.printNewline()
+    Option(consoleReader.readLine(Colors.cyan("> "))).map(_.trim).filter(_.size > 0).getOrElse(defaultName) match {
+      case IdParser(name) => name
+      case _ => {
+        consoleReader.printString(Colors.red("Error: ") + "Application name may only contain letters, digits, '_' and '-', and it must start with a letter.")
+        consoleReader.printNewline()
+        consoleReader.printNewline()
+        readApplicationName(defaultName)
+      }
+    }
+  }
+
   def helpCommand(args: Array[String]): (String, Int) = {
-    ("""
-            |Welcome to Play 2.0!
+    (
+     "Welcome to Play " + play.core.PlayVersion.current + """!
             |
             |These commands are available:
             |-----------------------------
@@ -178,7 +238,7 @@ object Console {
       command(args.drop(1))
     }.getOrElse {
       (Colors.red("\nThis is not a play application!\n") + ("""|
-           |Use `play new` to create a new Play application in the current directory, 
+           |Use `play new` to create a new Play application in the current directory,
            |or go to an existing application and launch the development console using `play`.
            |
            |You can also browse the complete documentation at http://www.playframework.org.""".stripMargin), -1)

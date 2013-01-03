@@ -1,54 +1,112 @@
 package play.api.http
 
 /**
- * Defines common HTTP Content-Type.
+ * Defines common HTTP Content-Type header values, according to the current available Codec.
  */
 object ContentTypes extends ContentTypes
 
-/** Defines common HTTP Content-Type. */
+/** Defines common HTTP Content-Type header values, according to the current available Codec. */
 trait ContentTypes {
 
   import play.api.mvc.Codec
 
   /**
-   * Content-Type of text according the implicit codec value.
+   * Content-Type of text.
    */
-  def TEXT(implicit codec: Codec): String = ("text/plain; charset=" + codec.charset)
+  def TEXT(implicit codec: Codec) = withCharset(MimeTypes.TEXT)
 
   /**
-   * Content-Type of html according the implicit codec value.
+   * Content-Type of html.
    */
-  def HTML(implicit codec: Codec): String = ("text/html; charset=" + codec.charset)
+  def HTML(implicit codec: Codec) = withCharset(MimeTypes.HTML)
 
   /**
-   * Content-Type of json according the implicit codec value.
+   * Content-Type of json.
    */
-  def JSON(implicit codec: Codec): String = ("application/json; charset=" + codec.charset)
+  def JSON(implicit codec: Codec) = withCharset(MimeTypes.JSON)
 
   /**
-   * Content-Type of xml according the implicit codec value.
+   * Content-Type of xml.
    */
-  def XML(implicit codec: Codec): String = ("text/xml; charset=" + codec.charset)
+  def XML(implicit codec: Codec) = withCharset(MimeTypes.XML)
 
   /**
-   * Content-Type of css according the implicit codec value.
+   * Content-Type of css.
    */
-  def CSS(implicit codec: Codec): String = ("text/css; charset=" + codec.charset)
+  def CSS(implicit codec: Codec) = withCharset(MimeTypes.CSS)
 
   /**
-   * Content-Type of javascript according the implicit codec value.
+   * Content-Type of javascript.
    */
-  def JAVASCRIPT(implicit codec: Codec): String = ("text/javascript; charset=" + codec.charset)
+  def JAVASCRIPT(implicit codec: Codec) = withCharset(MimeTypes.JAVASCRIPT)
 
   /**
-   * Content-Type of form-urlencoded according the implicit codec value.
+   * Content-Type of form-urlencoded.
    */
-  def FORM(implicit codec: Codec): String = ("application/x-www-form-urlencoded; charset=" + codec.charset)
+  def FORM(implicit codec: Codec) = withCharset(MimeTypes.FORM)
 
   /**
-   * Content-Type of server sent events according the implicit codec value
+   * Content-Type of server sent events.
    */
-  def EVENT_STREAM(implicit codec: Codec): String = ("text/event-stream; charset=" + codec.charset)
+  def EVENT_STREAM(implicit codec: Codec) = withCharset(MimeTypes.EVENT_STREAM)
+
+  /**
+   * Content-Type of binary data.
+   */
+  val BINARY = MimeTypes.BINARY
+
+  /**
+   * @return the `codec` charset appended to `mimeType`
+   */
+  def withCharset(mimeType: String)(implicit codec: Codec) = mimeType + "; charset=" + codec.charset
+
+}
+
+/** Common HTTP MIME types */
+object MimeTypes extends MimeTypes
+
+/** Common HTTP MIME types */
+trait MimeTypes {
+
+  /**
+   * Content-Type of text.
+   */
+  val TEXT = "text/plain"
+
+  /**
+   * Content-Type of html.
+   */
+  val HTML = "text/html"
+
+  /**
+   * Content-Type of json.
+   */
+  val JSON = "application/json"
+
+  /**
+   * Content-Type of xml.
+   */
+  val XML = "text/xml"
+
+  /**
+   * Content-Type of css.
+   */
+  val CSS = "text/css"
+
+  /**
+   * Content-Type of javascript.
+   */
+  val JAVASCRIPT = "text/javascript"
+
+  /**
+   * Content-Type of form-urlencoded.
+   */
+  val FORM = "application/x-www-form-urlencoded"
+
+  /**
+   * Content-Type of server sent events.
+   */
+  val EVENT_STREAM = "text/event-stream"
 
   /**
    * Content-Type of binary data.
@@ -77,6 +135,7 @@ trait Status {
   val NO_CONTENT = 204
   val RESET_CONTENT = 205
   val PARTIAL_CONTENT = 206
+  val MULTI_STATUS = 207
 
   val MULTIPLE_CHOICES = 300
   val MOVED_PERMANENTLY = 301
@@ -104,6 +163,9 @@ trait Status {
   val UNSUPPORTED_MEDIA_TYPE = 415
   val REQUESTED_RANGE_NOT_SATISFIABLE = 416
   val EXPECTATION_FAILED = 417
+  val UNPROCESSABLE_ENTITY = 422
+  val LOCKED = 423
+  val FAILED_DEPENDENCY = 424
   val TOO_MANY_REQUEST = 429
 
   val INTERNAL_SERVER_ERROR = 500
@@ -112,7 +174,7 @@ trait Status {
   val SERVICE_UNAVAILABLE = 503
   val GATEWAY_TIMEOUT = 504
   val HTTP_VERSION_NOT_SUPPORTED = 505
-
+  val INSUFFICIENT_STORAGE = 507
 }
 
 /** Defines all standard HTTP headers. */
@@ -191,6 +253,9 @@ trait HeaderNames {
   val WWW_AUTHENTICATE = "WWW-Authenticate"
 
   val X_FORWARDED_FOR = "X-Forwarded-For"
+  val X_FORWARDED_HOST = "X-Forwarded-Host"
+  val X_FORWARDED_PORT = "X-Forwarded-Port"
+  val X_FORWARDED_PROTO = "X-Forwarded-Proto"
   
   val ACCESS_CONTROL_ALLOW_ORIGIN = "Access-Control-Allow-Origin"
   val ACCESS_CONTROL_EXPOSE_HEADERS = "Access-Control-Expose-Headers"
@@ -201,5 +266,5 @@ trait HeaderNames {
 
   val ORIGIN = "Origin"
   val ACCESS_CONTROL_REQUEST_METHOD = "Access-Control-Request-Method"
-  val ACCESS_CONTROL_REQUEST_HEADERS = "Access-Control-Request-Headers"  
+  val ACCESS_CONTROL_REQUEST_HEADERS = "Access-Control-Request-Headers"
 }

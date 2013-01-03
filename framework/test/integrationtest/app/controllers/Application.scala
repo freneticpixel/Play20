@@ -30,6 +30,14 @@ object Application extends Controller {
    Ok("ok")
   }
 
+  def hello = Action { implicit request =>
+    Ok(views.html.hello(Messages("hello")))
+  }
+
+  def setLang(lang: String) = Action {
+    Ok(views.html.hello("Setting lang to " + lang)).withLang(Lang(lang))
+  }
+
   def form = Action{
     Ok(views.html.form(Contacts.form.fill(Contact("","M"))));
   }
@@ -58,8 +66,17 @@ object Application extends Controller {
     Ok(toJson(JsObject(List("blah" -> JsString("foo"))))) 
   }
 
-  def jsonWithContentType = Action {
-    Ok("{}").as("application/json")
+  def jsonWithContentType = Action { request =>
+    request.headers.get("AccEPT") match {
+      case Some("application/json") =>  {
+        val acceptHdr = request.headers.toMap.collectFirst{ case (header,valueSeq) if header.equalsIgnoreCase("Accept") => (header, valueSeq) }
+        acceptHdr.map{
+          case (name,value) => Ok("{\""+name+"\":\""+ value.head+ "\"}").as("application/json")
+        }.getOrElse(InternalServerError)
+      }
+      case _ => UnsupportedMediaType
+
+    }
   }
 
   def jsonWithContentTypeAndCharset = Action {
@@ -73,6 +90,10 @@ object Application extends Controller {
     val v = JCache.get("hello")
     if (v != "world") throw new RuntimeException("java cache API is not working")
     Ok(views.html.index(Cache.get("hello").map(_.toString).getOrElse("oh noooz")))
+  }
+
+  def takeInt(i: Int) = Action {
+    Ok(i.toString)
   }
 
   def takeBool(b: Boolean) = Action {
@@ -113,6 +134,14 @@ object Application extends Controller {
     }
   }
 
+  def contentNegotiation = Action { implicit request =>
+    val foo = Foo("bar")
+    render {
+      case Accepts.Html() => Ok(views.html.foo(foo))
+      case Accepts.Json() => Ok(Json.obj("bar" -> foo.bar))
+    }
+  }
+
   def onCloseSendFile(filepath: String) = Action {
     import java.io.File
     val file = new File(filepath)
@@ -128,5 +157,13 @@ object Application extends Controller {
     Async {
       Promise.pure[Result](sys.error("Error"))
     }
+  }
+
+  def route(parameter: String) = Action {
+    Ok("")
+  }
+
+  def routetest(parameter: String) = Action {
+    Ok("")
   }
 }

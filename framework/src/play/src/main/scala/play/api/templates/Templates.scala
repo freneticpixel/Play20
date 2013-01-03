@@ -8,16 +8,22 @@ import play.templates._
  *
  * @param text the HTML text
  */
-case class Html(text: String) extends Appendable[Html] with Content with play.mvc.Content {
-  val buffer = new StringBuilder(text)
+class Html(text: String) extends Appendable[Html] with Content with play.mvc.Content {
+  private val buffer = new StringBuilder(text)
 
   /**
-   * Appends this HTML fragment to another.
+   * Appends another Html fragment to this, modifying this.
    */
-  def +(other: Html): Html = {
+  def +=(other: Html): Html = {
     buffer.append(other.buffer)
     this
   }
+
+  @deprecated(message="Use += method instead.", since="2012/12")
+  def +(other: Html): Html = {
+    this += other
+  }
+
   override def toString = buffer.toString
 
   /**
@@ -35,9 +41,16 @@ case class Html(text: String) extends Appendable[Html] with Content with play.mv
 object Html {
 
   /**
+   * Creates an HTML fragment with initial content specified.
+   */
+  def apply(text: String): Html = {
+    new Html(text)
+  }
+
+  /**
    * Creates an empty HTML fragment.
    */
-  def empty: Html = Html("")
+  def empty: Html = new Html("")
 
 }
 
@@ -63,15 +76,20 @@ object HtmlFormat extends Format[Html] {
  *
  * @param text The plain text.
  */
-case class Txt(text: String) extends Appendable[Txt] with Content with play.mvc.Content {
-  val buffer = new StringBuilder(text)
+class Txt(text: String) extends Appendable[Txt] with Content with play.mvc.Content {
+  private val buffer = new StringBuilder(text)
 
   /**
-   * Appends this text fragment to another.
+   * Appends another text fragment to this, modifying this.
    */
-  def +(other: Txt): this.type = {
+  def +=(other: Txt): Txt = {
     buffer.append(other.buffer)
     this
+  }
+
+  @deprecated(message="Use += method instead.", since="2012/12")
+  def +(other: Txt): Txt = {
+    this += other
   }
 
   override def toString = buffer.toString
@@ -91,9 +109,17 @@ case class Txt(text: String) extends Appendable[Txt] with Content with play.mvc.
 object Txt {
 
   /**
+   * Creates a text fragment with initial content specified.
+   */
+  def apply(text: String): Txt = {
+    new Txt(text)
+  }
+
+
+  /**
    * Creates an empty text fragment.
    */
-  def empty = Txt("")
+  def empty = new Txt("")
 
 }
 
@@ -119,14 +145,22 @@ object TxtFormat extends Format[Txt] {
  *
  * @param text the plain xml text
  */
-case class Xml(text: String) extends Appendable[Xml] with Content with play.mvc.Content {
-  val buffer = new StringBuilder(text)
+class Xml(text: String) extends Appendable[Xml] with Content with play.mvc.Content {
+  private val buffer = new StringBuilder(text)
 
-  /** Append this XML fragment to another. */
-  def +(other: Xml) = {
+  /**
+   * Appends another XML fragment to this, modifying this.
+   */
+  def +=(other: Xml): Xml = {
     buffer.append(other.buffer)
     this
   }
+
+  @deprecated(message="Use += method instead.", since="2012/12")
+  def +(other: Xml): Xml = {
+    this += other
+  }
+
   override def toString = buffer.toString
 
   /**
@@ -144,9 +178,16 @@ case class Xml(text: String) extends Appendable[Xml] with Content with play.mvc.
 object Xml {
 
   /**
+   * Creates an XML fragment with initial content specified.
+   */
+  def apply(text: String): Xml = {
+    new Xml(text)
+  }
+
+  /**
    * Create an empty XML fragment.
    */
-  def empty = Xml("")
+  def empty = new Xml("")
 
 }
 
@@ -179,55 +220,5 @@ object PlayMagic {
    * }}}
    */
   def toHtmlArgs(args: Map[Symbol, Any]) = Html(args.map(a => a._1.name + "=\"" + a._2 + "\"").mkString(" "))
-
-}
-
-/** Defines a magic helper for Play templates in a Java context. */
-object PlayMagicForJava {
-
-  import scala.collection.JavaConverters._
-
-  /** Transforms a Play Java `Option` to a proper Scala `Option`. */
-  implicit def javaOptionToScala[T](x: play.libs.F.Option[T]): Option[T] = x match {
-    case x: play.libs.F.Some[_] => Some(x.get)
-    case x: play.libs.F.None[_] => None
-  }
-
-  implicit def implicitJavaLang: play.api.i18n.Lang = {
-    try {
-      play.mvc.Http.Context.Implicit.lang.asInstanceOf[play.api.i18n.Lang]
-    } catch {
-      case _ => play.api.i18n.Lang.defaultLang
-    }
-  }
-
-  /**
-   * Implicit conversion of a Play Java form `Field` to a proper Scala form `Field`.
-   */
-  implicit def javaFieldtoScalaField(jField: play.data.Form.Field): play.api.data.Field = {
-
-    new play.api.data.Field(
-      null,
-      jField.name,
-      jField.constraints.asScala.map { jT =>
-        jT._1 -> jT._2.asScala
-      },
-      Option(jField.format).map(f => f._1 -> f._2.asScala),
-      jField.errors.asScala.map { jE =>
-        play.api.data.FormError(
-          jE.key,
-          jE.message,
-          jE.arguments.asScala)
-      },
-      Option(jField.value)) {
-
-      override def apply(key: String) = {
-        javaFieldtoScalaField(jField.sub(key))
-      }
-
-      override lazy val indexes = jField.indexes.asScala.toSeq.map(_.toInt)
-
-    }
-  }
 
 }

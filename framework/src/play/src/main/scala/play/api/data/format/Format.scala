@@ -66,7 +66,7 @@ object Formats {
    */
   private def parsing[T](parse: String => T, errMsg: String, errArgs: Seq[Any])(key: String, data: Map[String, String]): Either[Seq[FormError], T] = {
     stringFormat.bind(key, data).right.flatMap { s =>
-      util.control.Exception.allCatch[T]
+      scala.util.control.Exception.allCatch[T]
         .either(parse(s))
         .left.map(e => Seq(FormError(key, errMsg, errArgs)))
     }
@@ -77,7 +77,7 @@ object Formats {
    */
   implicit def longFormat: Formatter[Long] = new Formatter[Long] {
 
-    override val format = Some("format.numeric", Nil)
+    override val format = Some(("format.numeric", Nil))
 
     def bind(key: String, data: Map[String, String]) =
       parsing(_.toLong, "error.number", Nil)(key, data)
@@ -90,7 +90,7 @@ object Formats {
    */
   implicit def intFormat: Formatter[Int] = new Formatter[Int] {
 
-    override val format = Some("format.numeric", Nil)
+    override val format = Some(("format.numeric", Nil))
 
     def bind(key: String, data: Map[String, String]) =
       parsing(_.toInt, "error.number", Nil)(key, data)
@@ -103,7 +103,7 @@ object Formats {
    */
   implicit def floatFormat: Formatter[Float] = new Formatter[Float] {
 
-    override val format = Some("format.real", Nil)
+    override val format = Some(("format.real", Nil))
 
     def bind(key: String, data: Map[String, String]) =
       parsing(_.toFloat, "error.real", Nil)(key, data)
@@ -116,7 +116,7 @@ object Formats {
    */
   implicit def doubleFormat: Formatter[Double] = new Formatter[Double] {
 
-    override val format = Some("format.real", Nil)
+    override val format = Some(("format.real", Nil))
 
     def bind(key: String, data: Map[String, String]) =
       parsing(_.toDouble, "error.real", Nil)(key, data)
@@ -129,7 +129,7 @@ object Formats {
    */
   implicit def booleanFormat: Formatter[Boolean] = new Formatter[Boolean] {
 
-    override val format = Some("format.boolean", Nil)
+    override val format = Some(("format.boolean", Nil))
 
     def bind(key: String, data: Map[String, String]) = {
       Right(data.get(key).getOrElse("false")).right.flatMap {
@@ -152,7 +152,7 @@ object Formats {
    */
   def dateFormat(pattern: String): Formatter[Date] = new Formatter[Date] {
 
-    override val format = Some("format.date", Seq(pattern))
+    override val format = Some(("format.date", Seq(pattern)))
 
     def bind(key: String, data: Map[String, String]) = {
       def dateParser = { s: String =>
@@ -180,7 +180,7 @@ object Formats {
    */
   def sqlDateFormat(pattern: String): Formatter[java.sql.Date] = new Formatter[java.sql.Date] {
 
-    override val format = Some("format.date", Seq(pattern))
+    override val format = Some(("format.date", Seq(pattern)))
 
     def bind(key: String, data: Map[String, String]) = {
       dateFormat(pattern).bind(key, data).right.map(d => new java.sql.Date(d.getTime))
@@ -206,7 +206,7 @@ object Formats {
 
     import org.joda.time.DateTime
 
-    override val format = Some("format.date", Seq(pattern))
+    override val format = Some(("format.date", Seq(pattern)))
 
     def bind(key: String, data: Map[String, String]) = {
 
@@ -226,6 +226,36 @@ object Formats {
    * @param pattern a date pattern as specified in `org.joda.time.format.DateTimeFormat`.
    */
   implicit val jodaDateTimeFormat: Formatter[org.joda.time.DateTime] = jodaDateTimeFormat("yyyy-MM-dd")
+
+  /**
+   * Formatter for the `org.joda.time.LocalDate` type.
+   *
+   * @param pattern a date pattern as specified in `org.joda.time.format.DateTimeFormat`.
+   */
+  def jodaLocalDateFormat(pattern: String): Formatter[org.joda.time.LocalDate] = new Formatter[org.joda.time.LocalDate] {
+
+    import org.joda.time.LocalDate
+
+    override val format = Some(("format.date", Seq(pattern)))
+
+    def bind(key: String, data: Map[String, String]) = {
+
+      stringFormat.bind(key, data).right.flatMap { s =>
+        scala.util.control.Exception.allCatch[LocalDate]
+          .either(LocalDate.parse(s, org.joda.time.format.DateTimeFormat.forPattern(pattern)))
+          .left.map(e => Seq(FormError(key, "error.date", Nil)))
+      }
+    }
+
+    def unbind(key: String, value: LocalDate) = Map(key -> value.toString(pattern))
+  }
+
+  /**
+   * Default formatter for `org.joda.time.LocalDate` type with pattern `yyyy-MM-dd`.
+   *
+   * @param pattern a date pattern as specified in `org.joda.time.format.DateTimeFormat`.
+   */
+  implicit val jodaLocalDateFormat: Formatter[org.joda.time.LocalDate] = jodaLocalDateFormat("yyyy-MM-dd")
 
 }
 

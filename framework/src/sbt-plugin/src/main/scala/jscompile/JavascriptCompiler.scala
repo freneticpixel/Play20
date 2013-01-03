@@ -23,14 +23,18 @@ object JavascriptCompiler {
   def compile(source: File, simpleCompilerOptions: Seq[String], fullCompilerOptions: Option[CompilerOptions]): (String, Option[String], Seq[File]) = {
     import scala.util.control.Exception._
 
-    val origin = Path(source).slurpString
+    val simpleCheck = simpleCompilerOptions.contains("rjs")
+
+    val origin = Path(source).string
 
     val options = fullCompilerOptions.getOrElse {
       val defaultOptions = new CompilerOptions()
       defaultOptions.closurePass = true
-      defaultOptions.setProcessCommonJSModules(true)
-      defaultOptions.setCommonJSModulePathPrefix(source.getParent() + "/")
-      defaultOptions.setManageClosureDependencies(Seq(toModuleName(source.getName())).asJava)
+      if (!simpleCheck) {
+        defaultOptions.setProcessCommonJSModules(true)
+        defaultOptions.setCommonJSModulePathPrefix(source.getParent() + File.separator)
+        defaultOptions.setManageClosureDependencies(Seq(toModuleName(source.getName())).asJava)
+      }
       simpleCompilerOptions.foreach(_ match {
         case "advancedOptimizations" => CompilationLevel.ADVANCED_OPTIMIZATIONS.setOptionsForCompilationLevel(defaultOptions)
         case "checkCaja" => defaultOptions.setCheckCaja(true)
@@ -43,19 +47,19 @@ object JavascriptCompiler {
     }
 
     val compiler = new Compiler()
-    val all = allSiblings(source)
-    val input = all.map(f => JSSourceFile.fromFile(f)).toArray
+    lazy val all = allSiblings(source)
+    val input = if (!simpleCheck) all.map(f => JSSourceFile.fromFile(f)).toArray else Array(JSSourceFile.fromFile(source))
 
     catching(classOf[Exception]).either(compiler.compile(Array[JSSourceFile](), input, options).success) match {
-      case Right(true) => (origin, Some(compiler.toSource()), all)
+      case Right(true) => (origin, { if (!simpleCheck) Some(compiler.toSource()) else None }, Nil)
       case Right(false) => {
         val error = compiler.getErrors().head
         val errorFile = all.find(f => f.getAbsolutePath() == error.sourceName)
-        throw AssetCompilationException(errorFile, error.description, error.lineNumber, 0)
+        throw AssetCompilationException(errorFile, error.description, Some(error.lineNumber), None)
       }
       case Left(exception) =>
         exception.printStackTrace()
-        throw AssetCompilationException(Some(source), "Internal Closure Compiler error (see logs)", 0, 0)
+        throw AssetCompilationException(Some(source), "Internal Closure Compiler error (see logs)", None, None)
     }
   }
 
@@ -73,8 +77,61 @@ object JavascriptCompiler {
       case true => compiler.toSource()
       case false => {
         val error = compiler.getErrors().head
-        throw AssetCompilationException(None, error.description, error.lineNumber, 0)
+        throw AssetCompilationException(None, error.description, Some(error.lineNumber), None)
       }
+    }
+  }
+
+  case class CompilationException(message: String, jsFile: File, atLine: Option[Int]) extends PlayException.ExceptionSource(
+    "JS Compilation error", message) {
+    def line = atLine.map(_.asInstanceOf[java.lang.Integer]).orNull
+    def position = null
+    def input = scalax.file.Path(jsFile).string
+    def sourceName = jsFile.getAbsolutePath
+  }
+
+  /*
+   * execute a native compiler for given command
+   */
+  def executeNativeCompiler(in: String, source: File): String = {
+    import scala.sys.process._
+    val qb = Process(in)
+    var out = List[String]()
+    var err = List[String]()
+    val exit = qb ! ProcessLogger((s) => out ::= s, (s) => err ::= s)
+    if (exit != 0) {
+      val eRegex = """.*Parse error on line (\d+):.*""".r
+      val errReverse = err.reverse
+      val r = eRegex.unapplySeq(errReverse.mkString("")).map(_.head.toInt)
+      val error = "error in: " + in + " \n" + errReverse.mkString("\n")
+
+      throw CompilationException(error, source, r)
+    }
+    out.reverse.mkString("\n")
+  }
+
+  def require(source: File): Unit = {
+    import org.mozilla.javascript._
+
+    import org.mozilla.javascript.tools.shell._
+
+    import scala.collection.JavaConverters._
+
+    import scalax.file._
+
+    val ctx = Context.enter; ctx.setOptimizationLevel(-1)
+    val global = new Global; global.init(ctx)
+    val scope = ctx.initStandardObjects(global)
+    val writer = new java.io.StringWriter()
+    try {
+      val defineArguments = """arguments = ['-o', '""" + source.getAbsolutePath + "']"
+      ctx.evaluateString(scope, defineArguments, null,
+        1, null)
+      val r = ctx.evaluateReader(scope, new InputStreamReader(
+        this.getClass.getClassLoader.getResource("r.js").openConnection().getInputStream()),
+        "r.js", 1, null)
+    } finally {
+      Context.exit()
     }
   }
 

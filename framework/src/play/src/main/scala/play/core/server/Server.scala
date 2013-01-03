@@ -1,5 +1,7 @@
 package play.core.server
 
+import scala.language.postfixOps
+
 import play.api._
 import play.core._
 import play.api.mvc._
@@ -11,10 +13,10 @@ import play.api.libs.concurrent._
 import akka.actor._
 import akka.actor.Actor._
 import akka.routing._
-import akka.config._
 import akka.pattern.Patterns.ask
-import akka.util.duration._
+import scala.concurrent.duration._
 import akka.util.Timeout
+import scala.util.control.NonFatal
 
 trait WebSocketable {
   def getHeader(header: String): String
@@ -26,11 +28,11 @@ trait WebSocketable {
  */
 trait Server {
 
-  // First delete the default log file for a fresh start
+  // First delete the default log file for a fresh start (only in Dev Mode)
   try {
-    scalax.file.Path(new java.io.File(applicationProvider.path, "logs/application.log")).delete()
+    if (mode == Mode.Dev) scalax.file.Path(new java.io.File(applicationProvider.path, "logs/application.log")).delete()
   } catch {
-    case _ =>
+    case NonFatal(_) =>
   }
 
   // Configure the logger for the first time
@@ -38,14 +40,9 @@ trait Server {
     Map("application.home" -> applicationProvider.path.getAbsolutePath),
     mode = mode)
 
-  // Start the main Invoker
-  val invoker = Invoker(applicationProvider)
-
-  // store the invoker in a global variable
-  Invoker.init(invoker)
-
   val bodyParserTimeout = {
-    Configuration(Invoker.system.settings.config).getMilliseconds("akka.actor.retrieveBodyParserTimeout").map(_ milliseconds).getOrElse(1 second)
+    //put in proper config
+    1 second
   }
 
   def mode: Mode.Mode
@@ -61,7 +58,9 @@ trait Server {
           (maybeAction.getOrElse(Action(BodyParsers.parse.empty)(_ => application.global.onHandlerNotFound(request))), application)
         }
       } catch {
-        case e => Left(e)
+        case e: ThreadDeath => throw e
+        case e: VirtualMachineError => throw e
+        case e: Throwable => Left(e)
       }
     }
 
@@ -70,11 +69,11 @@ trait Server {
       Logger.error(
         """
         |
-        |! %sInternal server error, for request [%s] ->
+        |! %sInternal server error, for (%s) [%s] ->
         |""".stripMargin.format(e match {
           case p: PlayException => "@" + p.id + " - "
           case _ => ""
-        }, request),
+        }, request.method, request.uri),
         e)
 
       DefaultGlobal.onError(request, e)
@@ -91,20 +90,9 @@ trait Server {
 
   }
 
-  def invoke[A](request: Request[A], response: Response, action: Action[A], app: Application) = {
-    invoker.actionInvoker ! Invoker.HandleAction(request, response, action, app)
-  }
-
-  def getBodyParser[A](requestHeaders: RequestHeader, bodyFunction: BodyParser[A]): Promise[Iteratee[Array[Byte], Either[Result, A]]] = {
-    val future = ask(invoker.actionInvoker, Invoker.GetBodyParser(requestHeaders, bodyFunction), bodyParserTimeout)
-    future.asPromise.map(_.asInstanceOf[Iteratee[Array[Byte], Either[Result, A]]])
-  }
-
   def applicationProvider: ApplicationProvider
 
   def stop() {
-    Invoker.uninit()
-    invoker.stop()
     Logger.shutdown()
   }
 

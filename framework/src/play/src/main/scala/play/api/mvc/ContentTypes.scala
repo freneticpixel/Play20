@@ -1,5 +1,7 @@
 package play.api.mvc
 
+import scala.language.reflectiveCalls
+
 import java.io._
 
 import scala.xml._
@@ -648,7 +650,7 @@ trait BodyParsers {
           for {
             value <- headers.get("content-disposition")
 
-            val values = value.split(";").map(_.trim).map {
+            values = value.split(";").map(_.trim).map {
               case keyValue(key, value) => (key.trim, value.trim)
               case key => (key.trim, "")
             }.toMap
@@ -659,7 +661,7 @@ trait BodyParsers {
 
             fileName <- values.get("filename");
 
-            val contentType = headers.get("content-type")
+            contentType = headers.get("content-type")
 
           } yield ((partName, fileName, contentType))
         }
@@ -680,7 +682,7 @@ trait BodyParsers {
           for {
             value <- headers.get("content-disposition")
 
-            val values = value.split(";").map(_.trim).map {
+            values = value.split(";").map(_.trim).map {
               case keyValue(key, value) => (key.trim, value.trim)
               case key => (key.trim, "")
             }.toMap

@@ -5,6 +5,16 @@ package play.api {
    */
   object Routes {
 
+    // -- TAGS
+
+    val ROUTE_VERB = "ROUTE_VERB"
+    val ROUTE_PATTERN = "ROUTE_PATTERN"
+    val ROUTE_CONTROLLER = "ROUTE_CONTROLLER"
+    val ROUTE_ACTION_METHOD = "ROUTE_ACTION_METHOD"
+    val ROUTE_COMMENTS = "ROUTE_COMMENTS"
+
+    // --
+
     import play.core.Router._
     import play.api.mvc.RequestHeader
 
@@ -43,7 +53,7 @@ package play.api {
              |})(%s)
           """.stripMargin.format(
         name,
-        ajaxMethod.map("ajax:function(c){c.url=r.url;c.type=r.method;return " + _ + "(c)},").getOrElse(""),
+        ajaxMethod.map("ajax:function(c){c=c||{};c.url=r.url;c.type=r.method;return " + _ + "(c)},").getOrElse(""),
         host,
         host,
         routes.map { route =>

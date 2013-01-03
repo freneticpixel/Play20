@@ -1,27 +1,18 @@
-package play.api.test;
+package play.api.test
 
 import play.api.mvc._
-import org.codehaus.jackson.JsonNode
 import play.api.libs.json.JsValue
+import play.api.libs.concurrent.Promise
+import collection.immutable.TreeMap
+import play.core.utils.CaseInsensitiveOrdered
+import xml.NodeSeq
 
 /**
  * Fake HTTP headers implementation.
  *
  * @param data Headers data.
  */
-case class FakeHeaders(data: Map[String, Seq[String]] = Map.empty) extends Headers {
-
-  /**
-   * All header keys.
-   */
-  lazy val keys = data.keySet
-
-  /**
-   * Get all header values defined for this key.
-   */
-  def getAll(key: String): Seq[String] = data.get(key).getOrElse(Seq.empty)
-
-}
+case class FakeHeaders(val data: Seq[(String, Seq[String])] = Seq.empty) extends Headers
 
 /**
  * Fake HTTP request implementation.
@@ -33,7 +24,23 @@ case class FakeHeaders(data: Map[String, Seq[String]] = Map.empty) extends Heade
  * @param body The request body.
  * @param remoteAddress The client IP.
  */
-case class FakeRequest[A](method: String, uri: String, headers: FakeHeaders, body: A, remoteAddress: String = "127.0.0.1") extends Request[A] {
+case class FakeRequest[A](method: String, uri: String, headers: FakeHeaders, body: A, remoteAddress: String = "127.0.0.1", version: String = "HTTP/1.1", id: Long = 666, tags: Map[String,String] = Map.empty[String,String]) extends Request[A] {
+
+  private def _copy[B](
+    id: Long = this.id,
+    tags: Map[String,String] = this.tags,
+    uri: String = this.uri,
+    path: String = this.path,
+    method: String = this.method,
+    version: String = this.version,
+    headers: FakeHeaders = this.headers,
+    remoteAddress: String = this.remoteAddress,
+    body: B = this.body
+  ): FakeRequest[B] = {
+    new FakeRequest[B](
+      method, uri, headers, body, remoteAddress, version, id, tags
+    )
+  }
 
   /**
    * The request path.
@@ -49,8 +56,8 @@ case class FakeRequest[A](method: String, uri: String, headers: FakeHeaders, bod
    * Constructs a new request with additional headers.
    */
   def withHeaders(newHeaders: (String, String)*): FakeRequest[A] = {
-    copy(headers = FakeHeaders(
-      headers.data ++ newHeaders.groupBy(_._1).mapValues(_.map(_._2))
+    _copy(headers = FakeHeaders(
+      headers.data ++ newHeaders.groupBy(_._1).mapValues(_.map(_._2)).toSeq
     ))
   }
 
@@ -89,8 +96,10 @@ case class FakeRequest[A](method: String, uri: String, headers: FakeHeaders, bod
    * Set a Form url encoded body to this request.
    */
   def withFormUrlEncodedBody(data: (String, String)*): FakeRequest[AnyContentAsFormUrlEncoded] = {
-    copy(body = AnyContentAsFormUrlEncoded(data.groupBy(_._1).mapValues(_.map(_._2))))
+    _copy(body = AnyContentAsFormUrlEncoded(data.groupBy(_._1).mapValues(_.map(_._2))))
   }
+
+  def certs = Promise.pure(IndexedSeq.empty)
 
   /**
    * Sets a JSON body to this request.
@@ -101,11 +110,46 @@ case class FakeRequest[A](method: String, uri: String, headers: FakeHeaders, bod
    * @param _method The request HTTP method, <tt>POST</tt> by default.
    * @return the current fake request
    */
-  def withJsonBody(node: JsValue, _method: String = Helpers.POST): FakeRequest[AnyContentAsJson] = {
-    copy(method = _method, body = AnyContentAsJson(node))
+  @deprecated("Use FakeRequest(method, path) to specify the method")
+  def withJsonBody(node: JsValue, _method: String): FakeRequest[AnyContentAsJson] = {
+    _copy(method = _method, body = AnyContentAsJson(node))
       .withHeaders(play.api.http.HeaderNames.CONTENT_TYPE -> "application/json")
   }
 
+  /**
+   * Adds a JSON body to the request.
+   */
+  def withJsonBody(json: JsValue): FakeRequest[AnyContentAsJson] = {
+    _copy(body = AnyContentAsJson(json))
+  }
+
+  /**
+   * Adds an XML body to the request.
+   */
+  def withXmlBody(xml: NodeSeq): FakeRequest[AnyContentAsXml] = {
+    _copy(body = AnyContentAsXml(xml))
+  }
+
+  /**
+   * Adds a text body to the request.
+   */
+  def withTextBody(text: String): FakeRequest[AnyContentAsText] = {
+    _copy(body = AnyContentAsText(text))
+  }
+
+  /**
+   * Adds a raw body to the request
+   */
+  def withRawBody(bytes: Array[Byte]): FakeRequest[AnyContentAsRaw] = {
+    _copy(body = AnyContentAsRaw(RawBuffer(bytes.length, bytes)))
+  }
+
+  /**
+   * Adds a body to the request.
+   */
+  def withBody[B](body: B): FakeRequest[B] = {
+    _copy(body = body)
+  }
 }
 
 /**
@@ -116,14 +160,14 @@ object FakeRequest {
   /**
    * Constructs a new GET / fake request.
    */
-  def apply(): FakeRequest[play.api.mvc.AnyContent] = {
+  def apply(): FakeRequest[AnyContentAsEmpty.type] = {
     FakeRequest("GET", "/", FakeHeaders(), AnyContentAsEmpty)
   }
 
   /**
    * Constructs a new request.
    */
-  def apply(method: String, path: String): FakeRequest[play.api.mvc.AnyContent] = {
+  def apply(method: String, path: String): FakeRequest[AnyContentAsEmpty.type] = {
     FakeRequest(method, path, FakeHeaders(), AnyContentAsEmpty)
   }
 
@@ -138,13 +182,18 @@ object FakeRequest {
  * @param withoutPlugins Plugins class names to disable
  * @param additionalConfiguration Additional configuration
  */
+
+import  play.api.{Application, WithDefaultConfiguration, WithDefaultGlobal, WithDefaultPlugins}
 case class FakeApplication(
     override val path: java.io.File = new java.io.File("."),
     override val classloader: ClassLoader = classOf[FakeApplication].getClassLoader,
     val additionalPlugins: Seq[String] = Nil,
     val withoutPlugins: Seq[String] = Nil,
-    val additionalConfiguration: Map[String, String] = Map.empty) extends play.api.Application(path, classloader, None, play.api.Mode.Test) {
-
+    val additionalConfiguration: Map[String, _ <: Any] = Map.empty,
+    val withGlobal: Option[play.api.GlobalSettings] = None) extends {
+  override val sources = None
+  override val mode = play.api.Mode.Test
+} with Application with WithDefaultConfiguration with WithDefaultGlobal with WithDefaultPlugins {
   override def pluginClasses = {
     additionalPlugins ++ super.pluginClasses.diff(withoutPlugins)
   }
@@ -153,4 +202,5 @@ case class FakeApplication(
     super.configuration ++ play.api.Configuration.from(additionalConfiguration)
   }
 
+  override lazy val global = withGlobal.getOrElse(super.global)
 }

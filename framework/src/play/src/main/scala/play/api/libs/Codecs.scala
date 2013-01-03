@@ -18,7 +18,7 @@ object Codecs {
     digest.update(bytes)
     digest.digest().map(0xFF & _).map { "%02x".format(_) }.foldLeft("") { _ + _ }
   }
-  
+
   /**
    * Computes the MD5 digest for a byte array.
    *
@@ -63,6 +63,14 @@ object Codecs {
    */
   def toHexString(array: Array[Byte]): String = {
     new String(toHex(array))
+  }
+
+  /**
+   * Transform an hexadecimal String to a byte array.
+   */
+  def hexStringToByte(hexString: String): Array[Byte] = {
+    import org.apache.commons.codec.binary.Hex;
+    Hex.decodeHex(hexString.toCharArray());
   }
 
 }

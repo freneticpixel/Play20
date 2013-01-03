@@ -1,6 +1,9 @@
 package play.api.test
 
+import scala.language.reflectiveCalls
+
 import play.api._
+import libs.ws.WS
 import play.api.mvc._
 import play.api.http._
 
@@ -10,6 +13,8 @@ import play.api.libs.concurrent._
 import org.openqa.selenium._
 import org.openqa.selenium.firefox._
 import org.openqa.selenium.htmlunit._
+
+import scala.concurrent.ExecutionContext.Implicits.global
 
 /**
  * Helper functions to run tests.
@@ -29,11 +34,14 @@ object Helpers extends Status with HeaderNames {
    * Executes a block of code in a running application.
    */
   def running[T](fakeApp: FakeApplication)(block: => T): T = {
-    try {
-      Play.start(fakeApp)
-      block
-    } finally {
-      Play.stop()
+    synchronized {
+      try {
+        Play.start(fakeApp)
+        block
+      } finally {
+        Play.stop()
+        play.api.libs.ws.WS.resetClient()
+      }
     }
   }
 
@@ -41,11 +49,13 @@ object Helpers extends Status with HeaderNames {
    * Executes a block of code in a running server.
    */
   def running[T](testServer: TestServer)(block: => T): T = {
-    try {
-      testServer.start()
-      block
-    } finally {
-      testServer.stop()
+    synchronized {
+      try {
+        testServer.start()
+        block
+      } finally {
+        testServer.stop()
+      }
     }
   }
 
@@ -54,22 +64,25 @@ object Helpers extends Status with HeaderNames {
    */
   def running[T, WEBDRIVER <: WebDriver](testServer: TestServer, webDriver: Class[WEBDRIVER])(block: TestBrowser => T): T = {
     var browser: TestBrowser = null
-    try {
-      testServer.start()
-      browser = TestBrowser.of(webDriver)
-      block(browser)
-    } finally {
-      if (browser != null) {
-        browser.quit()
+    synchronized {
+      try {
+        testServer.start()
+        browser = TestBrowser.of(webDriver)
+        block(browser)
+      } finally {
+        if (browser != null) {
+          browser.quit()
+        }
+        testServer.stop()
       }
-      testServer.stop()
     }
   }
 
   /**
-   * Apply pending evolutions for the given DB.
+   * The port to use for a test server. Defaults to 19001. May be configured using the system property
+   * testserver.port
    */
-  def evolutionFor(dbName: String, path: java.io.File = new java.io.File(".")): Unit = play.api.db.evolutions.OfflineEvolutions.applyScript(path, this.getClass.getClassLoader, dbName)
+  lazy val testServerPort = Option(System.getProperty("testserver.port")).map(_.toInt).getOrElse(19001)
 
   /**
    * Extracts the Content-Type of this Content value.
@@ -110,17 +123,17 @@ object Helpers extends Status with HeaderNames {
   def contentAsBytes(of: Result): Array[Byte] = of match {
     case r @ SimpleResult(_, bodyEnumerator) => {
       var readAsBytes = Enumeratee.map[r.BODY_CONTENT](r.writeable.transform(_)).transform(Iteratee.consume[Array[Byte]]())
-      bodyEnumerator(readAsBytes).flatMap(_.run).value.get
+      bodyEnumerator(readAsBytes).flatMap(_.run).value1.get
     }
-    case r => sys.error("Cannot extract the body content from a result of type " + r.getClass.getName)
+    case AsyncResult(p) => contentAsBytes(p.await.get)
   }
 
   /**
    * Extracts the Status code of this Result value.
    */
   def status(of: Result): Int = of match {
-    case Result(status, _) => status
-    case r => sys.error("Cannot extract the status from a result of type " + r.getClass.getName)
+    case PlainResult(status, _) => status
+    case AsyncResult(p) => status(p.await.get)
   }
 
   /**
@@ -143,11 +156,12 @@ object Helpers extends Status with HeaderNames {
    * Extracts the Location header of this Result value if this Result is a Redirect.
    */
   def redirectLocation(of: Result): Option[String] = of match {
-    case Result(FOUND, headers) => headers.get(LOCATION)
-    case Result(SEE_OTHER, headers) => headers.get(LOCATION)
-    case Result(TEMPORARY_REDIRECT, headers) => headers.get(LOCATION)
-    case Result(MOVED_PERMANENTLY, headers) => headers.get(LOCATION)
-    case Result(_, _) => None
+    case PlainResult(FOUND, headers) => headers.get(LOCATION)
+    case PlainResult(SEE_OTHER, headers) => headers.get(LOCATION)
+    case PlainResult(TEMPORARY_REDIRECT, headers) => headers.get(LOCATION)
+    case PlainResult(MOVED_PERMANENTLY, headers) => headers.get(LOCATION)
+    case PlainResult(_, _) => None
+    case AsyncResult(p) => redirectLocation(p.await.get)
     case r => sys.error("Cannot extract the headers from a result of type " + r.getClass.getName)
   }
 
@@ -160,13 +174,14 @@ object Helpers extends Status with HeaderNames {
    * Extracts all Headers of this Result value.
    */
   def headers(of: Result): Map[String, String] = of match {
-    case Result(_, headers) => headers
-    case r => sys.error("Cannot extract the headers from a result of type " + r.getClass.getName)
+    case PlainResult(_, headers) => headers
+    case AsyncResult(p) => headers(p.await.get)
   }
 
   /**
    * Use the Router to determine the Action to call for this request and executes it.
    */
+  @deprecated("Use `route` instead.", "2.1.0")
   def routeAndCall[T](request: FakeRequest[T]): Option[Result] = {
     routeAndCall(this.getClass.getClassLoader.loadClass("Routes").asInstanceOf[Class[play.core.Router.Routes]], request)
   }
@@ -174,33 +189,77 @@ object Helpers extends Status with HeaderNames {
   /**
    * Use the Router to determine the Action to call for this request and executes it.
    */
+  @deprecated("Use `route` instead.", "2.1.0")
   def routeAndCall[T, ROUTER <: play.core.Router.Routes](router: Class[ROUTER], request: FakeRequest[T]): Option[Result] = {
     val routes = router.getClassLoader.loadClass(router.getName + "$").getDeclaredField("MODULE$").get(null).asInstanceOf[play.core.Router.Routes]
     routes.routes.lift(request).map {
-      case a: Action[_] => 
+      case a: Action[_] =>
         val action = a.asInstanceOf[Action[T]]
-        val parsedBody: Option[Either[play.api.mvc.Result,T]] = action.parser(request).fold1(
-          (a,in) => Promise.pure(Some(a)),
+        val parsedBody: Option[Either[play.api.mvc.Result, T]] = action.parser(request).fold1(
+          (a, in) => Promise.pure(Some(a)),
           k => Promise.pure(None),
-          (msg,in) => Promise.pure(None)).await.get
-        parsedBody.map{resultOrT =>
-          resultOrT.right.toOption.map{innerBody => 
+          (msg, in) => Promise.pure(None)).await.get
+        parsedBody.map { resultOrT =>
+          resultOrT.right.toOption.map { innerBody =>
             action(FakeRequest(request.method, request.uri, request.headers, innerBody))
           }.getOrElse(resultOrT.left.get)
         }.getOrElse(action(request))
-        
+
+    }
+  }
+
+  // Java compatibility
+  def jRoute(app: Application, rh: RequestHeader): Option[Result] = route(app, rh, AnyContentAsEmpty)
+  def jRoute(app: Application, rh: RequestHeader, body: Array[Byte]): Option[Result] = route(app, rh, body)(Writeable.wBytes)
+  def jRoute(rh: RequestHeader, body: Array[Byte]): Option[Result] = jRoute(Play.current, rh, body)
+
+  /**
+   * Use the Router to determine the Action to call for this request and execute it.
+   *
+   * The body is serialised using the implicit writable, so that the action body parser can deserialise it.
+   */
+  def route[T](app: Application, rh: RequestHeader, body: T)(implicit w: Writeable[T]): Option[Result] = {
+    val rhWithCt = w.contentType.map(ct => rh.copy(
+      headers = FakeHeaders((rh.headers.toMap + ("Content-Type" -> Seq(ct))).toSeq)
+    )).getOrElse(rh)
+    app.global.onRouteRequest(rhWithCt).flatMap {
+      case a: EssentialAction => {
+        Some(AsyncResult(app.global.doFilter(a)(rhWithCt).feed(Input.El(w.transform(body))).flatMap(_.run)))
+      }
+      case _ => None
     }
   }
 
   /**
+   * Use the Router to determine the Action to call for this request and execute it.
+   *
+   * The body is serialised using the implicit writable, so that the action body parser can deserialise it.
+   */
+  def route[T](rh: RequestHeader, body: T)(implicit w: Writeable[T]): Option[Result] = route(Play.current, rh, body)
+
+  /**
+   * Use the Router to determine the Action to call for this request and execute it.
+   *
+   * The body is serialised using the implicit writable, so that the action body parser can deserialise it.
+   */
+  def route[T](app: Application, req: Request[T])(implicit w: Writeable[T]): Option[Result] = route(app, req, req.body)
+
+  /**
+   * Use the Router to determine the Action to call for this request and execute it.
+   *
+   * The body is serialised using the implicit writable, so that the action body parser can deserialise it.
+   */
+  def route[T](req: Request[T])(implicit w: Writeable[T]): Option[Result] = route(Play.current, req)
+
+  /**
    * Block until a Promise is redeemed.
    */
-  def await[T](p: play.api.libs.concurrent.Promise[T]): T = await(p, 5000)
+  def await[T](p: scala.concurrent.Future[T]): T = await(p, 5000)
 
   /**
    * Block until a Promise is redeemed with the specified timeout.
    */
-  def await[T](p: play.api.libs.concurrent.Promise[T], timeout: Long, unit: java.util.concurrent.TimeUnit = java.util.concurrent.TimeUnit.MILLISECONDS): T = p.await(timeout, unit).get
+  def await[T](p: scala.concurrent.Future[T], timeout: Long, unit: java.util.concurrent.TimeUnit = java.util.concurrent.TimeUnit.MILLISECONDS): T = p.await(timeout, unit).get
 
   /**
    * Constructs a in-memory (h2) database configuration to add to a FakeApplication.
@@ -212,4 +271,36 @@ object Helpers extends Status with HeaderNames {
     )
   }
 
+  /**
+   * Construct a WS request for the given reverse route.
+   *
+   * For example:
+   * {{{
+   *   wsCall(controllers.routes.Application.index()).get()
+   * }}}
+   */
+  def wsCall(call: Call)(implicit port: Port): WS.WSRequestHolder = wsUrl(call.url)
+
+  /**
+   * Construct a WS request for the given relative URL.
+   */
+  def wsUrl(url: String)(implicit port: Port): WS.WSRequestHolder = WS.url("http://localhost:" + port + url)
+
+  implicit def writeableOf_AnyContentAsJson(implicit codec: Codec): Writeable[AnyContentAsJson] =
+    Writeable.writeableOf_JsValue.map(c => c.json)
+
+  implicit def writeableOf_AnyContentAsXml(implicit codec: Codec): Writeable[AnyContentAsXml] =
+    Writeable.writeableOf_NodeSeq.map(c => c.xml)
+
+  implicit def writeableOf_AnyContentAsFormUrlEncoded(implicit code: Codec): Writeable[AnyContentAsFormUrlEncoded] =
+    Writeable.writeableOf_urlEncodedForm.map(c => c.data)
+
+  implicit def writeableOf_AnyContentAsRaw: Writeable[AnyContentAsRaw] =
+    Writeable.wBytes.map(c => c.raw.initialData)
+
+  implicit def writeableOf_AnyContentAsText(implicit code: Codec): Writeable[AnyContentAsText] =
+    Writeable.wString.map(c => c.txt)
+
+  implicit def writeableOf_AnyContentAsEmpty(implicit code: Codec): Writeable[AnyContentAsEmpty.type] =
+    Writeable(_ => Array.empty[Byte], None)
 }

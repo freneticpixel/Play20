@@ -1,7 +1,7 @@
 package models
 
 import akka.actor._
-import akka.util.duration._
+import scala.concurrent.duration._
 
 import play.api._
 import play.api.libs.json._
@@ -12,12 +12,13 @@ import akka.util.Timeout
 import akka.pattern.ask
 
 import play.api.Play.current
+import play.api.libs.concurrent.Execution.Implicits._
 
 object Robot {
   
   def apply(chatRoom: ActorRef) {
     
-    // Create an Iteratee that log all messages to the console.
+    // Create an Iteratee that logs all messages to the console.
     val loggerIteratee = Iteratee.foreach[JsValue](event => Logger("robot").info(event.toString))
     
     implicit val timeout = Timeout(1 second)
@@ -52,8 +53,9 @@ object ChatRoom {
     roomActor
   }
 
-  def join(username:String):Promise[(Iteratee[JsValue,_],Enumerator[JsValue])] = {
-    (default ? Join(username)).asPromise.map {
+  def join(username:String):scala.concurrent.Future[(Iteratee[JsValue,_],Enumerator[JsValue])] = {
+
+    (default ? Join(username)).map {
       
       case Connected(enumerator) => 
       
@@ -86,19 +88,18 @@ object ChatRoom {
 
 class ChatRoom extends Actor {
   
-  var members = Map.empty[String, PushEnumerator[JsValue]]
-  
+  var members = Set.empty[String]
+  val (chatEnumerator, chatChannel) = Concurrent.broadcast[JsValue]
+
   def receive = {
     
     case Join(username) => {
-      // Create an Enumerator to write to this socket
-      val channel =  Enumerator.imperative[JsValue]( onStart = () => self ! NotifyJoin(username))
       if(members.contains(username)) {
         sender ! CannotConnect("This username is already used")
       } else {
-        members = members + (username -> channel)
-        
-        sender ! Connected(channel)
+        members = members + username
+        sender ! Connected(chatEnumerator)
+        self ! NotifyJoin(username)
       }
     }
 
@@ -112,7 +113,7 @@ class ChatRoom extends Actor {
     
     case Quit(username) => {
       members = members - username
-      notifyAll("quit", username, "has leaved the room")
+      notifyAll("quit", username, "has left the room")
     }
     
   }
@@ -124,13 +125,11 @@ class ChatRoom extends Actor {
         "user" -> JsString(user),
         "message" -> JsString(text),
         "members" -> JsArray(
-          members.keySet.toList.map(JsString)
+          members.toList.map(JsString)
         )
       )
     )
-    members.foreach { 
-      case (_, channel) => channel.push(msg)
-    }
+    chatChannel.push(msg)
   }
   
 }
