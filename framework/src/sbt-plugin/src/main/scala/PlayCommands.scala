@@ -86,9 +86,9 @@ trait PlayCommands extends PlayAssetsCompiler with PlayEclipse {
   }
 
   val buildRequire = TaskKey[Seq[(JFile, JFile)]]("play-build-require-assets")
-  val buildRequireTask = (copyResources in Compile, crossTarget, requireJs, requireNativePath, streams) map { (cr, crossTarget, requireJs, requireNativePath,  s) =>
+  val buildRequireTask = (copyResources in Compile, crossTarget, requireJs, requireJsFolder, requireJsShim, requireNativePath, streams) map { (cr, crossTarget, requireJs, requireJsFolder, requireJsShim, requireNativePath,  s) =>
     val buildDescName = "app.build.js"
-    val jsFolder = "javascripts"
+    val jsFolder = if(!requireJsFolder.isEmpty) {requireJsFolder} else "javascripts"
     val rjoldDir = crossTarget / "classes" / "public" / jsFolder
     val buildDesc = crossTarget / "classes" / "public" / buildDescName
     if (requireJs.isEmpty == false) {
@@ -96,10 +96,12 @@ trait PlayCommands extends PlayAssetsCompiler with PlayEclipse {
       //cleanup previous version
       IO.delete(rjnewDir)
       val relativeModulePath = (str: String) => str.replace(".js", "")
+      val shim = if (!requireJsShim.isEmpty) {"""mainConfigFile: """" + jsFolder + """/""" + requireJsShim + """", """} else {""};
       val content =  """({appDir: """" + jsFolder + """",
           baseUrl: ".",
-          dir:"""" + rjnewDir.getName + """",
-          modules: [""" + requireJs.map(f => "{name: \"" + relativeModulePath(f) + "\"}").mkString(",") + """]})""".stripMargin
+          dir:"""" + rjnewDir.getName + """", """ +
+          shim +
+          """modules: [""" + requireJs.map(f => "{name: \"" + relativeModulePath(f) + "\"}").mkString(",") + """]})""".stripMargin
 
       IO.write(buildDesc,content)
       //run requireJS
@@ -386,7 +388,9 @@ exec java $* -cp $classpath """ + customFileName.map(fn => "-Dconfig.file=`dirna
   val RouteFiles = (state: State, confDirectory: File, generatedDir: File, additionalImports: Seq[String]) => {
     import play.router.RoutesCompiler._
 
-    ((generatedDir ** "routes.java").get ++ (generatedDir ** "routes_*.scala").get).map(GeneratedSource(_)).foreach(_.sync())
+    val javaRoutes = (generatedDir ** "routes.java")
+    val scalaRoutes = (generatedDir ** "routes_*.scala")
+    (javaRoutes.get ++ scalaRoutes.get).map(GeneratedSource(_)).foreach(_.sync())
     try {
       { (confDirectory * "*.routes").get ++ (confDirectory * "routes").get }.map { routesFile =>
         compile(routesFile, generatedDir, additionalImports)
@@ -398,7 +402,7 @@ exec java $* -cp $classpath """ + customFileName.map(fn => "-Dconfig.file=`dirna
       case e => throw e
     }
 
-    ((generatedDir ** "routes_*.scala").get ++ (generatedDir ** "routes.java").get).map(_.getAbsoluteFile)
+    (scalaRoutes.get ++ javaRoutes.get).map(_.getAbsoluteFile)
 
   }
 
@@ -497,7 +501,7 @@ exec java $* -cp $classpath """ + customFileName.map(fn => "-Dconfig.file=`dirna
     val sbtLoader = this.getClass.getClassLoader
     def commonLoaderEither = Project.runTask(playCommonClassloader, state).get._2.toEither
     val commonLoader = commonLoaderEither.right.toOption.getOrElse {
-      state.log.warn("some of the dependencies were not recompiled properly, so classloader is not avaialable")
+      state.log.warn("Some of the dependencies were not recompiled properly, so classloader is not available")
       throw commonLoaderEither.left.get
     }
     val maybeNewState = Project.runTask(dependencyClasspath in Compile, state).get._2.toEither.right.map { dependencies =>

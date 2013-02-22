@@ -99,8 +99,20 @@ public class F {
          * @param promises The promises to combine
          * @return A single promise whose methods act on the list of redeemed promises
          */
-        public static <A> Promise<List<A>> waitAll(Promise<? extends A>... promises){
+        public static <A> Promise<List<A>> sequence(Promise<? extends A>... promises){
             return new Promise<List<A>>(play.core.j.JavaPromise.<A>sequence(java.util.Arrays.asList(promises)));
+        }
+
+        /**
+         * Combine the given promises into a single promise for the list of results.
+         *
+         * @param promises The promises to combine
+         * @return A single promise whose methods act on the list of redeemed promises
+         * @deprecated As of release 2.1, replaced by {@link #sequence}
+         */
+
+        @Deprecated public static <A> Promise<List<A>> waitAll(Promise<? extends A>... promises){
+            return sequence(promises);
         }
 
         /**
@@ -142,12 +154,24 @@ public class F {
          * @param promises The promises to combine
          * @return A single promise whose methods act on the list of redeemed promises
          */
-        public static <A> Promise<List<A>> waitAll(Iterable<Promise<? extends A>> promises){
+        public static <A> Promise<List<A>> sequence(Iterable<Promise<? extends A>> promises){
             ArrayList<Promise<? extends A>> ps = new ArrayList<Promise<? extends A>>();
             for(Promise<? extends A> p : promises){
                 ps.add(p);
             }
             return new Promise<List<A>>(play.core.j.JavaPromise.<A>sequence(ps));
+        }
+
+
+        /**
+         * Combine the given promises into a single promise for the list of results.
+         *
+         * @param promises The promises to combine
+         * @return A single promise whose methods act on the list of redeemed promises
+         * @deprecated As of release 2.1, replaced by {@link #sequence}
+         */
+        @Deprecated public static <A> Promise<List<A>> waitAll(Iterable<Promise<? extends A>> promises){
+            return sequence(promises);
         }
 
         /**
@@ -324,6 +348,20 @@ public class F {
                         return p.promise;
                     }
                         },Invoker.executionContext())
+            );
+        }
+
+        /**
+         * Zips the values of this promise with <code>another</code>, and creates a new promise holding the tuple of their results
+         * @param another
+         */
+        public <B> Promise<Tuple<A, B>> zip(Promise<B> another) {
+            return new Promise(getWrappedPromise().zip(another.getWrappedPromise())).map(
+                new Function<scala.Tuple2<A, B>, Tuple<A, B>>() {
+                    public Tuple<A, B> apply(scala.Tuple2<A, B> scalaTuple) {
+                        return new Tuple(scalaTuple._1, scalaTuple._2);
+                    }
+                }
             );
         }
 

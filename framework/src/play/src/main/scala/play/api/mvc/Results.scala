@@ -171,7 +171,7 @@ sealed trait WithHeaders[+A <: Result] {
    *
    * For example:
    * {{{
-   * Ok("<text>Hello world</text>").as("text/xml")
+   * Ok("<text>Hello world</text>").as("application/xml")
    * }}}
    *
    * @param contentType the new content type.
@@ -312,7 +312,7 @@ trait PlainResult extends Result with WithHeaders[PlainResult] {
    *
    * For example:
    * {{{
-   * Ok("<text>Hello world</text>").as("text/xml")
+   * Ok("<text>Hello world</text>").as("application/xml")
    * }}}
    *
    * @param contentType the new content type.
@@ -534,7 +534,7 @@ case class AsyncResult(result: Future[Result]) extends Result with WithHeaders[A
    *
    * For example:
    * {{{
-   * Ok("<text>Hello world</text>").as("text/xml")
+   * Ok("<text>Hello world</text>").as("application/xml")
    * }}}
    *
    * @param contentType the new content type.
@@ -627,7 +627,7 @@ trait Results {
         header = ResponseHeader(OK, Map(
           CONTENT_LENGTH -> content.length.toString,
           CONTENT_TYPE -> play.api.libs.MimeTypes.forFileName(content.getName).getOrElse(play.api.http.ContentTypes.BINARY)
-        ) ++ (if (inline) Map.empty else Map(CONTENT_DISPOSITION -> ("attachment; filename=" + fileName(content))))),
+        ) ++ (if (inline) Map.empty else Map(CONTENT_DISPOSITION -> ("""attachment; filename="%s"""".format(fileName(content)))))),
         Enumerator.fromFile(content) &> Enumeratee.onIterateeDone(onClose)
       )
     }

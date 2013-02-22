@@ -15,7 +15,7 @@
 1. [[Using the Play console | PlayConsole ]]
 1. [[Setting up your preferred IDE | IDE]]
 1. [[Sample applications | Samples]]
-1. [[Security policy | http://www.playframework.org/code/security]]
+1. [[Security policy | http://www.playframework.com/code/security]]
 
 ## Working with Play
 
@@ -37,7 +37,7 @@
 1. [[Managing database evolutions | Evolutions]]
 1. [[Configuration file syntax and features | Configuration]]
     1. [[Configuring the JDBC connection pool | SettingsJDBC]]
-    1. [[Configuring the internal Akka system | AkkaCore]]
+    1. [[Configuring Play's thread pools | ThreadPools]]
     1. [[Configuring logging | SettingsLogger]]
 1. [[Deploying your application | Production]]
     1. [[Creating a standalone package | ProductionDist]]

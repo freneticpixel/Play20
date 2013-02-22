@@ -38,7 +38,7 @@ sealed trait AnyContent {
   }
 
   /**
-   * text/xml
+   * application/xml
    */
   def asXml: Option[NodeSeq] = this match {
     case AnyContentAsXml(xml) => Some(xml)
@@ -260,6 +260,8 @@ trait BodyParsers {
      */
     val UNLIMITED: Int = Integer.MAX_VALUE
 
+    private val ApplicationXmlMatcher = """application/.*\+xml.*""".r
+
     /**
      * Default max length allowed for text based body.
      *
@@ -269,7 +271,7 @@ trait BodyParsers {
      * parsers.text.maxLength = 512k
      * }}}
      */
-    lazy val DEFAULT_MAX_TEXT_LENGTH: Int = Play.maybeApplication.flatMap { app =>
+    def DEFAULT_MAX_TEXT_LENGTH: Int = Play.maybeApplication.flatMap { app =>
       app.configuration.getBytes("parsers.text.maxLength").map(_.toInt)
     }.getOrElse(1024 * 100)
 
@@ -411,18 +413,19 @@ trait BodyParsers {
     def tolerantXml: BodyParser[NodeSeq] = tolerantXml(DEFAULT_MAX_TEXT_LENGTH)
 
     /**
-     * Parse the body as Xml if the Content-Type is text/xml.
+     * Parse the body as Xml if the Content-Type is application/xml, text/xml or application/XXX+xml.
      *
      * @param maxLength Max length allowed or returns EntityTooLarge HTTP response.
      */
     def xml(maxLength: Int): BodyParser[NodeSeq] = when(
-      _.contentType.exists(_.startsWith("text/xml")),
+      _.contentType.exists(t => t.startsWith("text/xml") || t.startsWith("application/xml")
+        || ApplicationXmlMatcher.pattern.matcher(t).matches()),
       tolerantXml(maxLength),
-      request => Play.maybeApplication.map(_.global.onBadRequest(request, "Expecting text/xml body")).getOrElse(Results.BadRequest)
+      request => Play.maybeApplication.map(_.global.onBadRequest(request, "Expecting xml body")).getOrElse(Results.BadRequest)
     )
 
     /**
-     * Parse the body as Xml if the Content-Type is text/xml.
+     * Parse the body as Xml if the Content-Type is application/xml, text/xml or application/XXX+xml.
      */
     def xml: BodyParser[NodeSeq] = xml(DEFAULT_MAX_TEXT_LENGTH)
 
@@ -515,7 +518,7 @@ trait BodyParsers {
           Logger("play").trace("Parsing AnyContent as text")
           text(request).map(_.right.map(s => AnyContentAsText(s)))
         }
-        case Some("text/xml") => {
+        case Some("text/xml") | Some("application/xml") | Some(ApplicationXmlMatcher()) => {
           Logger("play").trace("Parsing AnyContent as xml")
           xml(request).map(_.right.map(x => AnyContentAsXml(x)))
         }

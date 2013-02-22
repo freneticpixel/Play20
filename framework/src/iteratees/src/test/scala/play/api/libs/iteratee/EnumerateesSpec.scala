@@ -3,6 +3,7 @@ package play.api.libs.iteratee
 import scala.concurrent._
 import scala.concurrent.duration.Duration
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.language.reflectiveCalls
 
 import org.specs2.mutable._
 
@@ -48,6 +49,17 @@ object EnumerateesSpec extends Specification {
       val enumerator = Enumerator(Range(1,20).map(_.toString) :_*)
       Await.result(enumerator |>>> take3AndConsume, Duration.Inf) must equalTo(Range(4,20).map(_.toString).mkString)
 
+    }
+
+    "not trigger callback on take 0" in {
+      var triggered = false
+      val enumerator = Enumerator.fromCallback {
+        () =>
+          triggered = true
+          Future(Some(1))
+      }
+      Await.result(enumerator &> Enumeratee.take(0) |>>> Iteratee.fold(0)(_ + _), Duration.Inf) must equalTo(0)
+      triggered must beFalse
     }
 
   }
@@ -114,6 +126,22 @@ object EnumerateesSpec extends Specification {
       val addOne = Enumerator(1,2,3,4) &> Enumeratee.map(i => i+1) 
       addOne : Enumerator[Int]
       true //this test is about compilation and if it compiles it means we got it right
+    }
+
+  }
+  
+  "Enumeratee.flatten" should {
+
+    "passAlong a future enumerator" in {
+
+      val passAlongFuture = Enumeratee.flatten {
+        concurrent.future { 
+          Enumeratee.passAlong[Int]
+        }
+      }
+      val sum = Iteratee.fold[Int, Int](0)(_+_)
+      val enumerator = Enumerator(1,2,3,4,5,6,7,8,9)
+      Await.result(enumerator |>>> passAlongFuture &>> sum, Duration.Inf) must equalTo(45)
     }
 
   }
@@ -185,6 +213,22 @@ object EnumerateesSpec extends Specification {
 
     }
 
+  }
+
+  "Enumeratee.recover" should {
+
+    "perform computations and log errors" in {
+      val eventuallyInput = Promise[Input[Int]]()
+
+      val result = Enumerator(0, 2, 4) &> Enumeratee.recover { (_, input) =>
+        eventuallyInput.success(input)
+      } &> Enumeratee.map { i =>
+          8 / i
+      } |>>> Iteratee.getChunks // => List(4, 2)
+
+      Await.result(result, Duration.Inf) must equalTo(List(4, 2))
+      Await.result(eventuallyInput.future, Duration.Inf) must equalTo(Input.El(0))
+    }
   }
 
 }

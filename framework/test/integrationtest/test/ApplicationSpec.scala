@@ -261,6 +261,41 @@ class ApplicationSpec extends Specification {
       app.routes
       controllers.module.routes.ModuleController.index().url must_== "/module/index"
     }
+
+    "document the router" in new WithApplication() {
+      // The purpose of this test is to alert anyone that changes the format of the router documentation that
+      // it is being used by Swagger. So if you do change it, please let Tony Tam know at tony at wordnik dot com.
+      val someRoute = app.routes.flatMap(_.documentation.find(r => r._1 == "GET" && r._2.startsWith("/read/")))
+      someRoute must beSome[(String, String, String)]
+      val route = someRoute.get
+      route._2 must_== "/read/$name<[^/]+>"
+      route._3 must startWith("controllers.JavaApi.readCookie")
+    }
+
+    "support xml" in {
+      "detect xml when content type is application/xml" in new WithServer() {
+        await(wsUrl("/any-xml").withHeaders("Content-Type" -> "application/xml").post(<foo>bar</foo>)).status must_== 200
+      }
+      "detect xml when content type is text/xml" in new WithServer() {
+        await(wsUrl("/any-xml").withHeaders("Content-Type" -> "text/xml").post(<foo>bar</foo>)).status must_== 200
+      }
+      "detect xml when content type is application/atom+xml" in new WithServer() {
+        await(wsUrl("/any-xml").withHeaders("Content-Type" -> "application/atom+xml").post(<foo>bar</foo>)).status must_== 200
+      }
+      "accept xml when content type is application/xml" in new WithServer() {
+        await(wsUrl("/xml").withHeaders("Content-Type" -> "application/xml").post(<foo>bar</foo>)).status must_== 200
+      }
+      "accept xml when content type is text/xml" in new WithServer() {
+        await(wsUrl("/xml").withHeaders("Content-Type" -> "text/xml").post(<foo>bar</foo>)).status must_== 200
+      }
+      "accept xml when content type is application/atom+xml" in new WithServer() {
+        await(wsUrl("/xml").withHeaders("Content-Type" -> "application/atom+xml").post(<foo>bar</foo>)).status must_== 200
+      }
+      "send xml responses as application/xml" in new WithServer() {
+        await(wsUrl("/xml").withHeaders("Content-Type" -> "application/xml").post(<foo>bar</foo>)).header("Content-Type").get must startWith("application/xml")
+      }
+    }
+    
   }
 
 }

@@ -34,7 +34,7 @@ Instead of calling the `Action` yourself, you can let the `Router` do it:
 
 ```scala
 "respond to the index Action" in {
-  val Some(result) = routeAndCall(FakeRequest(GET, "/Bob"))
+  val Some(result) = route(FakeRequest(GET, "/Bob"))
   
   status(result) must equalTo(OK)
   contentType(result) must beSome("text/html")
@@ -85,7 +85,7 @@ If you want to test your application using a browser, you can use [[Selenium Web
 Like `WithServer`, you can change the port, `FakeApplication`, and you can also select the web browser to use:
 
 ```scala
-"run in a browser" in new WithBrowser(browser = FIREFOX) {
+"run in a browser" in new WithBrowser(webDriver = FIREFOX) {
   ...
 }
 ```

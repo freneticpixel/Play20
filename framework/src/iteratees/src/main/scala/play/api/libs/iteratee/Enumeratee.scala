@@ -1,6 +1,7 @@
 package play.api.libs.iteratee
 
 import scala.language.reflectiveCalls
+import scala.concurrent.ExecutionContext
 
 import scala.concurrent.Future
 import play.api.libs.iteratee.internal.defaultExecutionContext
@@ -87,6 +88,16 @@ object Enumeratee {
         case Step.Cont(k) => continue(k)
         case _ => Done(it, Input.Empty)
       }
+  }
+  
+  /**
+   * flatten a [[scala.concurrent.Future]] of [[play.api.libs.iteratee.Enumeratee]]] into an Enumeratee
+   *
+   * @param futureOfEnumeratee a future of enumeratee
+   */
+  def flatten[From, To](futureOfEnumeratee: Future[Enumeratee[From, To]]) = new Enumeratee[From, To] {
+    def applyOn[A](it: Iteratee[To, A]): Iteratee[From, Iteratee[To,A]] = 
+      Iteratee.flatten(futureOfEnumeratee map(_.applyOn[A](it)))
   }
 
   /**
@@ -281,7 +292,7 @@ object Enumeratee {
       case in => Done(Cont(k), in)
     }
 
-    def continue[A](k: K[E, A]) = Cont(step(count)(k))
+    def continue[A](k: K[E, A]) = if (count <= 0) Done(Cont(k), Input.EOF) else Cont(step(count)(k))
 
   }
 
@@ -532,6 +543,50 @@ object Enumeratee {
 
     def continue[A](k: K[E, A]) = Cont(step(k))
 
+  }
+
+  /**
+   * Create an Enumeratee that recovers an iteratee in Error state.
+   *
+   * This will ignore the input that caused the iteratee's error state 
+   * and use the previous state of the iteratee to handle the next input.
+   *
+   * {{{
+   *  Enumerator(0, 2, 4) &> Enumeratee.recover { (error, input) =>
+   *    Logger.error(f"oops failure occured with input: $input", error)
+   *  } &> Enumeratee.map { i =>
+   *    8 / i
+   *  } |>>> Iteratee.getChunks // => List(4, 2)
+   * }}}
+   *
+   */
+  def recover[E](f: (Throwable, Input[E]) => Unit = (_:Throwable, _:Input[E]) => ())(implicit executionContext: ExecutionContext): Enumeratee[E, E] = new Enumeratee[E, E] {
+    def applyOn[A](it: Iteratee[E, A]): Iteratee[E, Iteratee[E, A]] = {
+
+      def step(it: Iteratee[E, A])(input: Input[E]): Iteratee[E, Iteratee[E, A]] = input match {
+        case in @ (Input.El(_) | Input.Empty) =>
+          val next: Future[Iteratee[E, Iteratee[E, A]]] = it.pureFlatFold[E, Iteratee[E, A]] {
+            case Step.Cont(k) => 
+              val n = k(in)
+              n.pureFlatFold {
+                case Step.Cont(k) => Cont(step(n))
+                case _ => Done(n, Input.Empty)
+              }
+            case other => Done(other.it, in)
+          }.unflatten.map({ s =>
+            s.it
+          })(play.api.libs.iteratee.internal.defaultExecutionContext).recover({ case e: Throwable =>
+            f(e, in)
+            Cont(step(it))
+          })(executionContext)
+            Iteratee.flatten(next)
+        case Input.EOF =>
+          Done(it, Input.Empty)
+      }
+
+      Cont(step(it))
+
+    }
   }
 
 }

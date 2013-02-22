@@ -3,8 +3,10 @@ package play.api.libs.iteratee
 import org.specs2.mutable._
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import concurrent.{Future, Await}
+import concurrent.{Promise, Future, Await}
 import concurrent.duration.Duration
+import java.io.OutputStream
+import scala.language.reflectiveCalls
 
 object EnumeratorsSpec extends Specification {
 
@@ -39,6 +41,47 @@ object EnumeratorsSpec extends Specification {
       result.length must equalTo (7)
     }
 
+  "not necessarily go alternatively between two enumerators" in {
+    val firstDone = Promise[Unit]
+    val e1 = Enumerator(1, 2, 3, 4).onDoneEnumerating(firstDone.success(Unit))
+    val e2 = Enumerator.unfoldM[Boolean, Int](true) { first => if (first) firstDone.future.map(_ => Some(false, 5)) else Future.successful(None)}
+    val result = Await.result((e1 interleave e2) |>>> Iteratee.getChunks[Int], Duration.Inf)
+    result must_== Seq(1, 2, 3, 4, 5)
+  }
+
+}
+
+"Enumerator.enumerate " should {
+  "generate an Enumerator from a singleton Iterator" in {
+    val iterator = scala.collection.Iterator.single[Int](3)
+    val futureOfResult = Enumerator.enumerate(iterator) |>>> 
+                         Enumeratee.take(1) &>> 
+                         Iteratee.fold(List.empty[Int])((r, e) => e::r)
+    val result = Await.result(futureOfResult, Duration.Inf)
+    result(0) must equalTo(3)
+    result.length must equalTo(1)
+  }
+
+  "take as much element as in the iterator in the right order" in {
+    val iterator = scala.collection.Iterator.range(0, 50)
+    val futureOfResult = Enumerator.enumerate(iterator) |>>> 
+                         Enumeratee.take(100) &>> 
+                         Iteratee.fold(Seq.empty[Int])((r, e) => r :+ e)
+    val result = Await.result(futureOfResult, Duration.Inf)
+    result.length must equalTo(50)
+    result(0) must equalTo(0)
+    result(49) must equalTo(49)
+  }
+  "work with Seq too" in {
+    val seq = List(1, 2, 3, 7, 42, 666)
+    val futureOfResult = Enumerator.enumerate(seq) |>>> 
+                         Enumeratee.take(100) &>> 
+                         Iteratee.fold(Seq.empty[Int])((r, e) => r :+ e)
+    val result = Await.result(futureOfResult, Duration.Inf)
+    result.length must equalTo(6)
+    result(0) must equalTo(1)
+    result(4) must equalTo(42)
+  }
 }
 
 "Enumerator's Hub" should {
@@ -152,6 +195,20 @@ object EnumeratorsSpec extends Specification {
     val promise = (enumerator |>>> Iteratee.fold[Array[Byte],Array[Byte]](Array[Byte]())(_ ++ _))
 
     Await.result(promise, Duration.Inf).map(_.toChar).foldLeft("")(_+_) must equalTo (a+b)
+  }
+
+  "not block" in {
+    var os: OutputStream = null
+    val enumerator = Enumerator.outputStream(o => os = o)
+    val promiseIteratee = Promise[Iteratee[Array[Byte], Array[Byte]]]
+    val future = enumerator |>>> Iteratee.flatten(promiseIteratee.future)
+    // os should now be set
+    os.write("hello".getBytes)
+    os.write(" ".getBytes)
+    os.write("world".getBytes)
+    os.close()
+    promiseIteratee.success(Iteratee.consume[Array[Byte]]())
+    Await.result(future, Duration("10s")) must_== "hello world".getBytes
   }
 }
 

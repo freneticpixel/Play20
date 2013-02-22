@@ -1,6 +1,7 @@
 package play.api.test
 
 import scala.language.reflectiveCalls
+import scala.xml.NodeSeq
 
 import play.api._
 import libs.ws.WS
@@ -9,6 +10,7 @@ import play.api.http._
 
 import play.api.libs.iteratee._
 import play.api.libs.concurrent._
+import play.api.libs.json.{ Json, JsValue }
 
 import org.openqa.selenium._
 import org.openqa.selenium.firefox._
@@ -100,6 +102,11 @@ object Helpers extends Status with HeaderNames {
   def contentAsBytes(of: Content): Array[Byte] = of.body.getBytes
 
   /**
+   * Extracts the content as Json.
+   */
+  def contentAsJson(of: Content): JsValue = Json.parse(of.body)
+
+  /**
    * Extracts the Content-Type of this Result value.
    */
   def contentType(of: Result): Option[String] = header(CONTENT_TYPE, of).map(_.split(";").take(1).mkString.trim)
@@ -127,6 +134,11 @@ object Helpers extends Status with HeaderNames {
     }
     case AsyncResult(p) => contentAsBytes(p.await.get)
   }
+
+  /**
+   * Extracts the content as Json.
+   */
+  def contentAsJson(of: Result): JsValue = Json.parse(contentAsString(of))
 
   /**
    * Extracts the Status code of this Result value.
@@ -212,6 +224,17 @@ object Helpers extends Status with HeaderNames {
   def jRoute(app: Application, rh: RequestHeader): Option[Result] = route(app, rh, AnyContentAsEmpty)
   def jRoute(app: Application, rh: RequestHeader, body: Array[Byte]): Option[Result] = route(app, rh, body)(Writeable.wBytes)
   def jRoute(rh: RequestHeader, body: Array[Byte]): Option[Result] = jRoute(Play.current, rh, body)
+  def jRoute[T](app: Application, r: FakeRequest[T]): Option[Result] = {
+    (r.body: @unchecked) match {
+      case body: AnyContentAsFormUrlEncoded => route(app, r, body)
+      case body: AnyContentAsJson => route(app, r, body)
+      case body: AnyContentAsXml => route(app, r, body)
+      case body: AnyContentAsText => route(app, r, body)
+      case body: AnyContentAsRaw => route(app, r, body)
+      case body: AnyContentAsEmpty.type => route(app, r, body)
+      //case _ => MatchError is thrown
+    }
+  }
 
   /**
    * Use the Router to determine the Action to call for this request and execute it.
@@ -222,9 +245,14 @@ object Helpers extends Status with HeaderNames {
     val rhWithCt = w.contentType.map(ct => rh.copy(
       headers = FakeHeaders((rh.headers.toMap + ("Content-Type" -> Seq(ct))).toSeq)
     )).getOrElse(rh)
-    app.global.onRouteRequest(rhWithCt).flatMap {
+    val handler = app.global.onRouteRequest(rhWithCt)
+    val taggedRh = handler.map({
+      case h: RequestTaggingHandler => h.tagRequest(rhWithCt)
+      case _ => rh
+    }).getOrElse(rhWithCt)
+    handler.flatMap {
       case a: EssentialAction => {
-        Some(AsyncResult(app.global.doFilter(a)(rhWithCt).feed(Input.El(w.transform(body))).flatMap(_.run)))
+        Some(AsyncResult(app.global.doFilter(a)(taggedRh).feed(Input.El(w.transform(body))).flatMap(_.run)))
       }
       case _ => None
     }
@@ -264,10 +292,12 @@ object Helpers extends Status with HeaderNames {
   /**
    * Constructs a in-memory (h2) database configuration to add to a FakeApplication.
    */
-  def inMemoryDatabase(name: String = "default"): Map[String, String] = {
+  def inMemoryDatabase(name: String = "default", options: Map[String, String] = Map.empty[String, String]): Map[String, String] = {
+    val optionsForDbUrl = options.map { case (k, v) => k + "=" + v }.mkString(";", ";", "")
+
     Map(
       ("db." + name + ".driver") -> "org.h2.Driver",
-      ("db." + name + ".url") -> ("jdbc:h2:mem:play-test-" + scala.util.Random.nextInt)
+      ("db." + name + ".url") -> ("jdbc:h2:mem:play-test-" + scala.util.Random.nextInt + optionsForDbUrl)
     )
   }
 
