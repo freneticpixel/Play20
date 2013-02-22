@@ -403,34 +403,6 @@ object PlayBuild extends Build {
 
     object Dependencies {
 
-<<<<<<< HEAD
-        val runtime = Seq(
-			"com.cgbystrom"						%	 "netty-tools"				%	"1.2.7",
-            "io.netty"                          %    "netty"                    %   "3.3.0.Final",
-            "org.slf4j"                         %    "slf4j-api"                %   "1.6.4",
-            "org.slf4j"                         %    "jul-to-slf4j"             %   "1.6.4",
-            "org.slf4j"                         %    "jcl-over-slf4j"           %   "1.6.4",
-            "ch.qos.logback"                    %    "logback-core"             %   "1.0.3",
-            "ch.qos.logback"                    %    "logback-classic"          %   "1.0.3",
-            "com.github.scala-incubator.io"     %%   "scala-io-file"            %   "0.4.0",
-            "com.typesafe.akka"                 %    "akka-actor"               %   "2.0.1",
-            "com.typesafe.akka"                 %    "akka-slf4j"               %   "2.0.1",
-            
-            ("com.google.guava"                 %    "guava"                    %   "10.0.1" notTransitive())
-              .exclude("com.google.code.findbugs", "jsr305")
-            ,
-            
-            "com.google.code.findbugs"          %    "jsr305"                   %   "2.0.0",
-            
-            ("org.avaje"                        %    "ebean"                    %   "2.7.5" notTransitive())
-              .exclude("javax.persistence", "persistence-api")
-            ,
-            
-            "org.hibernate.javax.persistence"   %    "hibernate-jpa-2.0-api"    %   "1.0.1.Final",
-            "com.h2database"                    %    "h2"                       %   "1.3.158",
-            "org.scala-tools"                   %%   "scala-stm"                %   "0.5",
-            
-=======
       // Some common dependencies here so they don't need to be declared over and over
       val specsBuild = "org.specs2" %% "specs2" % "1.12.3"
       // The 2.10 version of scala-io-file 0.4.1 doesn't work with 2.10.0.
@@ -438,7 +410,6 @@ object PlayBuild extends Build {
 
 
       val jdbcDeps = Seq(
->>>>>>> upstream/master
             ("com.jolbox"                       %    "bonecp"                   %   "0.7.1.RELEASE" notTransitive())
               .exclude("com.google.guava", "guava")
               .exclude("org.slf4j", "slf4j-api"),
@@ -497,6 +468,7 @@ object PlayBuild extends Build {
         )
 
         val runtime = Seq(
+            "com.cgbystrom"                     %    "netty-tools"              %   "1.2.7",
             "io.netty"                          %    "netty"                    %   "3.5.9.Final",
 
             "org.slf4j"                         %    "slf4j-api"                %   "1.6.6",
