@@ -55,6 +55,11 @@
 * **Repository(snapshot):** <http://hakandilek.github.com/play2-cache/snapshots/>
 * **Short description:** Utilities for simplifying caching
 
+## ClojureScript Plugin
+
+* **Website:** <https://bitbucket.org/jmhofer/play-clojurescript> (docs, code)
+* **Short description:** Compiles ClojureScript asset files to JavaScript
+
 ## Cloudfront module (Scala)
 
 * **Website:** <https://github.com/mchv/play2-cloudfront>
@@ -113,6 +118,10 @@
 
 * **Website:** <https://github.com/seratch/inputvalidator/tree/master/play-module>
 * **Short description:** provides a simple validation API for Play20
+
+## JackRabbit Plugin (Java and Scala)
+* **Website (docs, sample):** [JackRabbit Plugin GitHub](http://goo.gl/2OXEp)
+* **Short description:** Apache JackRabbit Plugin for play! framework 2
 
 ## Japid module
 
@@ -196,9 +205,9 @@
 * **Documentation:** <https://github.com/joscha/play-authenticate/blob/master/README.md>
 * **Short description:** A highly customizable authentication module for Play 2.0
 
-## Play Mini (Java and Scala)
-* **Website (docs, sample):** <https://github.com/typesafehub/play2-mini>
-* **Short description:** uses play as an HTTP library (in a standard SBT project)
+## play-jaxrs (Java)
+* **Website (docs, sample):** [play-jaxrs](https://github.com/pk11/play-jaxrs/)
+* **Short description:** a JAX-RS router plugin for play java apps 
 
 ## Play-pac4j (Java and Scala)
 * **Website:** <https://github.com/leleuj/play-pac4j>
