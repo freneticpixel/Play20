@@ -44,6 +44,8 @@ class NettyServer(appProvider: ApplicationProvider, port: Int, sslPort: Option[I
 
     def getPipeline = {
       val newPipeline = pipeline()
+      newPipeline.addLast("flashPolicy", new FlashPolicyHandler())
+
       if (secure) {
         sslContext.map { ctxt =>
             val sslEngine = ctxt.createSSLEngine
