@@ -20,6 +20,8 @@ import java.security.cert.X509Certificate
 import java.io.{File, FileInputStream}
 import scala.util.control.NonFatal
 
+import se.cgbystrom.netty.FlashPolicyHandler
+
 /**
  * provides a stopable Server
  */
